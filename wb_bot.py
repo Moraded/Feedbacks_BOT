@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.exceptions import TelegramAPIError
 
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
@@ -83,9 +84,12 @@ async def cmd_start(message: types.Message):
 @dp.message(Command("reviews"))
 async def cmd_reviews(message: types.Message):
     await message.answer("⌛ Загружаю ответы с WB...")
-
-    feedbacks = get_wb_feedbacks()
-
+    try:
+        feedbacks = get_wb_feedbacks()
+    except requests.exceptions.RequestException:
+        await message.answer("❌ Ошибка загрузки ответов с WB")
+        return
+    
     if not feedbacks:
         await message.answer("✅ Нет неотвеченных отзывов!")
         return
@@ -93,8 +97,11 @@ async def cmd_reviews(message: types.Message):
     await message.answer(f"Найдено отзывов: {len(feedbacks)}. Генерируем ответы...")
 
     for fb in feedbacks:
-        answer = generate_answer(fb)
-
+        try:
+            answer = generate_answer(fb)
+        except anthropic.APIError:
+            await message.answer(f"Неудалось обработать отзыв {fb['id']}\n\n Переходим к следующему отзыву...")
+            continue
         #Сохраняем для кнопок
         pending_reviews[fb["id"]] = {
             "answer": answer,
@@ -126,9 +133,13 @@ async def cmd_reviews(message: types.Message):
                 callback_data=f"skip_{fb['id']}"
             )
         )
-
-        await message.answer(text, reply_markup=builder.as_markup())
-
+        try:
+            await message.answer(text, reply_markup=builder.as_markup())
+        except TelegramAPIError:
+            await message.answer(f"Ошибка при формировании отзыва...\n\n Переходим к следующему отзыву!")
+            del pending_reviews[fb["id"]]
+            continue
+        
 @dp.callback_query(F.data.startswith("send_"))
 async def on_send(callback: types.CallbackQuery):
     feedback_id = callback.data.replace("send_", "")
@@ -137,9 +148,15 @@ async def on_send(callback: types.CallbackQuery):
     if not review:
         await callback.answer("Отзыв не найден")
         return
-    
-    success = send_answer_to_wb(feedback_id, review["answer"])
-
+    try:
+        success = send_answer_to_wb(feedback_id, review["answer"])
+    except requests.exceptions.RequestException:
+        await callback.message.edit_text(
+            callback.message.text + "\n\n❌ ОШИБКА API"
+        )
+        del pending_reviews[feedback_id]
+        await callback.answer()
+        return
     if success:
         await callback.message.edit_text(
             callback.message.text + "\n\n✅ ОТПРАВЛЕНО"
