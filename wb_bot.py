@@ -34,6 +34,7 @@ def get_wb_feedbacks():
     headers = {"Authorization": WB_TOKEN}
     params = {"isAnswered": "false", "take": 3, "skip": 0}
     r = requests.get(url, headers=headers, params=params)
+    print(f"WB status code get feedbacks: {r.status_code}")
     return r.json()["data"]["feedbacks"]
 
 
@@ -108,8 +109,8 @@ async def cmd_reviews(message: types.Message):
             "feedback_id": fb["id"]
         }
 
-        #Формируем текст
-        review_text = fb.get("text") or fb.get("pros") or ""
+        #Формируем текст ВОТ ЗДЕСЬ ЕСТЬ ПРОБЛЕМА, НУЖНО СОЕДИНИТЬ PROS TEXT и ЕЩЕ
+        review_text = f"{fb.get("text")} {fb.get("pros")} {fb.get("cons")}" or ""
         start = "⭐" * fb["productValuation"]
         product = fb["productDetails"]["productName"]
 
