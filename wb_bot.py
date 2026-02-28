@@ -6,13 +6,17 @@ import logging
 import sqlite3
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
+from aiogram.types import Message
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramAPIError
 
 
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
+
 
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
@@ -29,6 +33,11 @@ SYSTEM_PROMPT = """Ты — менеджер на Wildberries.
 #Хранилище отзывов для кнопок
 pending_reviews = {}
 
+
+class WaitToken(StatesGroup):
+    wait_token = State()
+
+
 def init_db():
     #База данных пользователей
     conn = sqlite3.connect('users.db')
@@ -40,7 +49,7 @@ def init_db():
     conn.close()
 
 
-def get_wb_feedbacks():
+def get_wb_feedbacks(WB_TOKEN):
     #Получает неотвеченные отзывы с WB
     url = "https://feedbacks-api.wildberries.ru/api/v1/feedbacks"
     headers = {"Authorization": WB_TOKEN}
@@ -76,7 +85,7 @@ def generate_answer(feedback):
     return response.content[0].text
 
 
-def send_answer_to_wb(feedback_id, answer_text):
+def send_answer_to_wb(feedback_id, answer_text, WB_TOKEN):
     #Отправляем ответ на WB
     url = "https://feedbacks-api.wildberries.ru/api/v1/feedbacks/answer"
     headers = {"Authorization": WB_TOKEN}
@@ -91,6 +100,8 @@ async def cmd_start(message: types.Message):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", (message.from_user.id, ""))
+    cursor.execute("SELECT token FROM users WHERE user_id = ?", (message.from_user.id,))
+    token = cursor.fetchone()
     conn.commit()
     cursor.close()
     conn.close()
@@ -100,17 +111,49 @@ async def cmd_start(message: types.Message):
         "/reviews - загрузить неотвеченные отзывы"
     )
     await message.answer(f"ID: {message.from_user.id} записан в базу")
+    if token[0]:
+        await message.answer("Токен есть!")
+    else:
+        await message.answer("Токен не подключен")
 
+
+#Ввод токена ВБ
+@dp.message(StateFilter(None), Command("token"))
+async def cmd_token(message: Message, state: FSMContext):
+    await message.answer(
+        text="Введите токен:",
+    )
+    await state.set_state(WaitToken.wait_token)
+
+@dp.message(WaitToken.wait_token)
+async def insert_token(message: Message, state: FSMContext):
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET token = ? WHERE user_id = ?", (message.text, message.from_user.id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    await state.clear()
+    await message.answer(text="Токен успешно введен!")
 
 @dp.message(Command("reviews"))
 async def cmd_reviews(message: types.Message):
     await message.answer("⌛ Загружаю ответы с WB...")
-    try:
-        feedbacks = get_wb_feedbacks()
-    except requests.exceptions.RequestException:
-        await message.answer("❌ Ошибка загрузки ответов с WB")
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT token FROM users WHERE user_id = ?", (message.from_user.id,))
+    token = cursor.fetchone()[0]
+    conn.commit()
+    cursor.close()
+    conn.close()
+    if not token:
+        await message.answer("Токен отсутствует, попробуйте сначала ввести токен: /token")
         return
-    
+    try:
+        feedbacks = get_wb_feedbacks(token)
+    except requests.exceptions.RequestException as e:
+        await message.answer(f"❌ Ошибка загрузки ответов с WB {e}")
+        return
     if not feedbacks:
         await message.answer("✅ Нет неотвеченных отзывов!")
         return
@@ -170,7 +213,15 @@ async def on_send(callback: types.CallbackQuery):
         await callback.answer("Отзыв не найден")
         return
     try:
-        success = send_answer_to_wb(feedback_id, review["answer"])
+        #ЗДЕСЬ ОСТАНОВИЛСЯ НА 01.03.2026
+        conn = sqlite3.connect('users.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT token FROM users WHERE user_id = ?", (callback.from_user.id,))
+        token = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        success = send_answer_to_wb(feedback_id, review["answer"], token)
     except requests.exceptions.RequestException:
         await callback.message.edit_text(
             callback.message.text + "\n\n❌ ОШИБКА API"
