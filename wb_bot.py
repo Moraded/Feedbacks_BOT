@@ -3,11 +3,13 @@ import anthropic
 import requests
 import os
 import logging
+import sqlite3
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramAPIError
+
 
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
@@ -24,8 +26,18 @@ SYSTEM_PROMPT = """Ты — менеджер на Wildberries.
 Если отзыв негативный — извинись и предложи связаться для решения проблемы.
 Не используй эмодзи."""
 
-# Хранилище отзывов для кнопок
+#Хранилище отзывов для кнопок
 pending_reviews = {}
+
+def init_db():
+    #База данных пользователей
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+
+    cursor.execute('CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, token TEXT)')
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 
 def get_wb_feedbacks():
@@ -76,10 +88,18 @@ def send_answer_to_wb(feedback_id, answer_text):
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", (message.from_user.id, ""))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
     await message.answer(
         "Маяк Селлеров - бот для ответов на отзывы\n\n"
         "/reviews - загрузить неотвеченные отзывы"
     )
+    await message.answer(f"ID: {message.from_user.id} записан в базу")
 
 
 @dp.message(Command("reviews"))
@@ -179,8 +199,9 @@ async def on_skip(callback: types.CallbackQuery):
         callback.message.text + "\n\n⏭️ ПРОПУЩЕНО"
     )
     await callback.answer()
-
+    
 async def main():
+    init_db()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
