@@ -2,7 +2,6 @@ import asyncio
 import requests
 import os
 import logging
-from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message
 from aiogram.filters import Command, StateFilter
@@ -16,7 +15,6 @@ from ai import generate_answer
 
 
 logging.basicConfig(level=logging.INFO)
-load_dotenv()
 
 
 bot = Bot(token=os.getenv("BOT_TOKEN"))
@@ -142,6 +140,7 @@ async def cmd_reviews(message: types.Message):
         if not answer:
             await message.answer(f"Неудалось обработать отзыв {fb['id']}\n\n Переходим к следующему отзыву...")
             continue
+
         #Сохраняем для кнопок
         pending_reviews[fb["id"]] = {
             "answer": answer,
