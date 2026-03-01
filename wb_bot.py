@@ -37,6 +37,17 @@ pending_reviews = {}
 class WaitToken(StatesGroup):
     wait_token = State()
 
+def get_user_token(user_id):
+    try:
+        conn = sqlite3.connect('users.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT token FROM users WHERE user_id = ?", (user_id,))
+        token = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+    except (sqlite3.Error, TypeError):
+        token = None
+    return token
 
 def init_db():
     #База данных пользователей
@@ -53,7 +64,7 @@ def get_wb_feedbacks(WB_TOKEN):
     #Получает неотвеченные отзывы с WB
     url = "https://feedbacks-api.wildberries.ru/api/v1/feedbacks"
     headers = {"Authorization": WB_TOKEN}
-    params = {"isAnswered": "false", "take": 3, "skip": 0}
+    params = {"isAnswered": "false", "take": 1, "skip": 0}
     r = requests.get(url, headers=headers, params=params)
     print(f"WB status code get feedbacks: {r.status_code}")
     return r.json()["data"]["feedbacks"]
@@ -94,24 +105,27 @@ def send_answer_to_wb(feedback_id, answer_text, WB_TOKEN):
     print(f"WB status code: {r.status_code}")
     return r.status_code == 204
 
+def check_token(WB_TOKEN):
+    url = "https://feedbacks-api.wildberries.ru/ping"
+    headers = {"Authorization": WB_TOKEN}
+    r = requests.get(url, headers=headers)
+    print(f"WB token check status code: {r.status_code}")
+    return r.status_code
+
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", (message.from_user.id, ""))
-    cursor.execute("SELECT token FROM users WHERE user_id = ?", (message.from_user.id,))
-    token = cursor.fetchone()
-    conn.commit()
-    cursor.close()
-    conn.close()
+    token = get_user_token(message.from_user.id)
     
     await message.answer(
         "Маяк Селлеров - бот для ответов на отзывы\n\n"
         "/reviews - загрузить неотвеченные отзывы"
     )
     await message.answer(f"ID: {message.from_user.id} записан в базу")
-    if token[0]:
+    if token:
         await message.answer("Токен есть!")
     else:
         await message.answer("Токен не подключен")
@@ -127,25 +141,40 @@ async def cmd_token(message: Message, state: FSMContext):
 
 @dp.message(WaitToken.wait_token)
 async def insert_token(message: Message, state: FSMContext):
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET token = ? WHERE user_id = ?", (message.text, message.from_user.id))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    await message.answer("⌛ Проверка токена...")
+    token = message.text.strip()
     await state.clear()
-    await message.answer(text="Токен успешно введен!")
-
+    try:
+        token_status = check_token(token)
+    except requests.exceptions.RequestException:
+        await message.answer("Непредвиденная ошибка, перезапустите команду /token")
+        return
+    if token_status == 200:
+        await message.answer("✅🔑 Токен успешно подтвержден!")
+        try:
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET token = ? WHERE user_id = ?", (token, message.from_user.id))
+        except sqlite3.Error:
+            await message.answer("Непредвиденная ошибка, перезапустите команду /token")
+            return
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return
+    elif token_status == 401:
+        await message.answer("❌🔑 Неверный токен или не авторизован!")
+        return
+    elif token_status == 429:
+        await message.answer("❌ Слишком много запросов!")
+        return
+    else:
+        await message.answer("❌ Другая ошибка токена!")
+        return
 @dp.message(Command("reviews"))
 async def cmd_reviews(message: types.Message):
     await message.answer("⌛ Загружаю ответы с WB...")
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT token FROM users WHERE user_id = ?", (message.from_user.id,))
-    token = cursor.fetchone()[0]
-    conn.commit()
-    cursor.close()
-    conn.close()
+    token = get_user_token(message.from_user.id)
     if not token:
         await message.answer("Токен отсутствует, попробуйте сначала ввести токен: /token")
         return
@@ -213,14 +242,7 @@ async def on_send(callback: types.CallbackQuery):
         await callback.answer("Отзыв не найден")
         return
     try:
-        #ЗДЕСЬ ОСТАНОВИЛСЯ НА 01.03.2026
-        conn = sqlite3.connect('users.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT token FROM users WHERE user_id = ?", (callback.from_user.id,))
-        token = cursor.fetchone()[0]
-        conn.commit()
-        cursor.close()
-        conn.close()
+        token = get_user_token(callback.from_user.id)
         success = send_answer_to_wb(feedback_id, review["answer"], token)
     except requests.exceptions.RequestException:
         await callback.message.edit_text(
