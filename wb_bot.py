@@ -2,6 +2,7 @@ import asyncio
 import requests
 import os
 import logging
+from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message
 from aiogram.filters import Command, StateFilter
@@ -16,6 +17,7 @@ from ai import generate_answer
 
 logging.basicConfig(level=logging.INFO)
 
+load_dotenv()
 
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
@@ -24,9 +26,43 @@ dp = Dispatcher()
 #Хранилище отзывов для кнопок
 pending_reviews = {}
 
+#Хранилище отзывов для режима ответов
+user_feedbacks = {}
+
+#Индекс для отслеживания текущего отзыва в ручном режиме
+user_review_index = {}
+
 
 class WaitToken(StatesGroup):
     wait_token = State()
+
+#Клавиатуры
+def answermod_keyboard():
+    buttons = [
+        [types.InlineKeyboardButton(text="Ручной режим", callback_data="reply_manual")],
+        [types.InlineKeyboardButton(text="Автоматичский режим", callback_data="reply_auto")]
+    ]
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    return keyboard
+
+def default_keyboard():
+    buttons = [
+        [types.InlineKeyboardButton(text="🔑 Заменить токен", callback_data="token_replace")],
+        [types.InlineKeyboardButton(text="🔄 Сбросить токен", callback_data="token_reset")],
+        [types.InlineKeyboardButton(text="📝 Ответить на отзывы", callback_data="reviews")]
+    ]
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    return keyboard
+
+def connect_token_keyboard():
+    buttons = [
+        [
+            types.InlineKeyboardButton(text="🔑 Подключить токен", callback_data="token_connect"),
+
+        ]
+    ]
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    return keyboard
 
 
 @dp.message(Command("reset"))
@@ -34,12 +70,17 @@ async def cmd_reset(message: types.Message):
     if not reset_token(message.from_user.id):
         await message.answer("Ошибка сброса токена, попробуйте снова")
         return
-    kb_start = [[
-            types.KeyboardButton(text="🔑 Подключить токен")
-        ],
-        ]
-    keyboard_start = types.ReplyKeyboardMarkup(keyboard=kb_start,resize_keyboard=True)
-    await message.answer("Токен сброшен.", reply_markup=keyboard_start)
+    await message.answer("Токен сброшен.", reply_markup=connect_token_keyboard())
+
+
+@dp.callback_query(F.data == "token_reset")
+async def callback_token_reset(callback: types.CallbackQuery):
+    if not reset_token(callback.from_user.id):
+        await callback.message.edit_text("Ошибка сброса токена, попробуйте снова")
+        return
+    await callback.message.edit_text("Токен сброшен.", reply_markup=connect_token_keyboard())
+    await callback.answer()
+
 
 
 @dp.message(Command("start"))
@@ -47,24 +88,17 @@ async def cmd_start(message: types.Message):
     register_user(message.from_user.id)
     token = get_user_token(message.from_user.id)
     if token:
-        kb_start = [[
-            types.KeyboardButton(text="🔑 Заменить токен"),
-            types.KeyboardButton(text="📝 Ответить на отзывы")
-        ],
-        ]
-        keyboard_start = types.ReplyKeyboardMarkup(keyboard=kb_start,resize_keyboard=True)
-        
-        await message.answer("Добро пожаловать обратно!\n\n" "Маяк Селлеров - бот для ответов на отзывы", reply_markup=keyboard_start)
-        
-        await message.answer("🟢 Токен подключен")
+        await message.answer(
+            "🟢Токен подключен\n\n"
+            "Добро пожаловать обратно!\n\n"
+            "Маяк Селлеров - бот для ответов на отзывы", reply_markup=default_keyboard()
+            )
     else:
-        kb_start = [[
-            types.KeyboardButton(text="🔑 Подключить токен")
-        ],
-        ]
-        keyboard_start = types.ReplyKeyboardMarkup(keyboard=kb_start,resize_keyboard=True)
-        await message.answer("Добро пожаловать новый пользователь!\n\n" "Маяк Селлеров - бот для ответов на отзывы", reply_markup=keyboard_start)
-        await message.answer("🔴 Токен не подключен")
+        await message.answer(
+            "🔴 Токен не подключен\n\n"
+            "Добро пожаловать!\n\n" 
+            "Маяк Селлеров - бот для ответов на отзывы", reply_markup=connect_token_keyboard()
+            )
 
 
 #Ввод токена ВБ
@@ -77,112 +111,137 @@ async def cmd_token(message: Message, state: FSMContext):
 
 @dp.message(WaitToken.wait_token)
 async def insert_token(message: Message, state: FSMContext):
-    await message.answer("⌛ Проверка токена...")
+    data = await state.get_data()
+    status_msg = await bot.edit_message_text(
+        chat_id=message.chat.id,
+        message_id=data.get("message_id"),
+        text="⌛ Проверяю токен..."
+    )
     token = message.text.strip()
+    await message.delete()
     await state.clear()
     token_status = check_token(token)
     if not token_status:
         await message.answer("Непредвиденная ошибка, перезапустите команду /token")
         return
     if token_status == 200:
-        await message.answer("✅🔑 Токен успешно подтвержден!")
-        kb_start = [[
-            types.KeyboardButton(text="🔑 Заменить токен"),
-            types.KeyboardButton(text="📝 Ответить на отзывы")
-        ],
-        ]
-        keyboard_start = types.ReplyKeyboardMarkup(keyboard=kb_start,resize_keyboard=True)
-        
-        await message.answer("🟢 Токен подключен", reply_markup=keyboard_start)
+        await status_msg.edit_text("✅🔑 Токен успешно подтвержден!", reply_markup=default_keyboard())
         if not save_token(message.from_user.id, token):
             await message.answer("Непредвиденная ошибка, перезапустите команду /token")
             return
         return
     elif token_status == 401:
-        await message.answer("❌🔑 Неверный токен или не авторизован!")
+        await status_msg.edit_text("❌🔑 Неверный токен или не авторизован!")
         return
     elif token_status == 429:
-        await message.answer("❌ Слишком много запросов!")
+        await status_msg.edit_text("❌ Слишком много запросов!")
         return
     else:
-        await message.answer("❌ Другая ошибка токена!")
+        await status_msg.edit_text("❌ Другая ошибка токена!")
         return
 
-@dp.message(F.text == "🔑 Подключить токен")
-async def start_token_connect(message: types.Message, state: FSMContext):
-    await cmd_token(message, state)
+@dp.callback_query(F.data == "token_connect")
+async def start_token_connect(callback: types.CallbackQuery, state: FSMContext):
+    msg = await callback.message.edit_text("Введите токен:")
+    await state.update_data(message_id=msg.message_id)
+    await state.set_state(WaitToken.wait_token)
+    await callback.answer()
 
-@dp.message(F.text == "🔑 Заменить токен")
-async def start_token_replace(message: types.Message, state: FSMContext):
-    await cmd_token(message, state)
+
+@dp.callback_query(F.data == "token_replace")
+async def start_token_replace(callback: types.CallbackQuery, state: FSMContext):
+    msg = await callback.message.edit_text("Введите новый токен:")
+    await state.update_data(message_id=msg.message_id)
+    await state.set_state(WaitToken.wait_token)
+    await callback.answer()
 
 
-@dp.message(Command("reviews"))
-async def cmd_reviews(message: types.Message):
-    await message.answer("⌛ Загружаю ответы с WB...")
-    token = get_user_token(message.from_user.id)
+@dp.callback_query(F.data == "reviews")
+async def callback_reviews(callback: types.CallbackQuery):
+    await callback.message.edit_text("⌛ Загружаю ответы с WB...")
+    token = get_user_token(callback.from_user.id)
     if not token:
-        await message.answer("Токен отсутствует, попробуйте сначала ввести токен: /token")
+        await callback.message.edit_text("Токен отсутствует, попробуйте сначала ввести токен: /token")
         return
     feedbacks = get_wb_feedbacks(token)
-    #Вот тут надо разобраться с ошибкой получения отзывов, сейчас просто проверяю на None, но может быть и другой формат ответа при ошибке
-    if not feedbacks:
-        await message.answer(f"❌ Ошибка загрузки ответов с WB")
+    #Проверка на ошибки загрузки
+    if feedbacks is None:
+        await callback.message.edit_text(f"❌ Ошибка загрузки ответов с WB")
         return
     if not feedbacks:
-        await message.answer("✅ Нет неотвеченных отзывов!")
+        await callback.message.edit_text("✅ Нет неотвеченных отзывов!")
         return
     
-    await message.answer(f"Найдено отзывов: {len(feedbacks)}. Генерируем ответы...")
+    user_feedbacks[callback.from_user.id] = feedbacks
 
-    for fb in feedbacks:
-        answer = generate_answer(fb)
-        if not answer:
-            await message.answer(f"Неудалось обработать отзыв {fb['id']}\n\n Переходим к следующему отзыву...")
-            continue
+    await callback.message.edit_text(f"Найдено отзывов: {len(feedbacks)}. Выберите режим ответов на отзывы", reply_markup=answermod_keyboard())
 
-        #Сохраняем для кнопок
-        pending_reviews[fb["id"]] = {
-            "answer": answer,
-            "feedback_id": fb["id"]
-        }
 
-        #Формируем текст ВОТ ЗДЕСЬ ЕСТЬ ПРОБЛЕМА, НУЖНО СОЕДИНИТЬ PROS TEXT и ЕЩЕ
-        review_text = f"{fb.get("text")} {fb.get("pros")} {fb.get("cons")}"
-        start = "⭐" * fb["productValuation"]
-        product = fb["productDetails"]["productName"]
+@dp.callback_query(F.data == "reply_manual")
+async def reply_manual(callback: types.CallbackQuery):
+    await callback.message.edit_text("Отвечаем на отзывы в ручном режиме")
+    feedbacks = user_feedbacks.get(callback.from_user.id)
+    if feedbacks is None:
+        await callback.message.edit_text("Ошибка в обработке отзывов, попробуйте снова", reply_markup=default_keyboard())
+        return
+    user_review_index[callback.from_user.id] = 0
+    await show_next_review(callback.message.chat.id, callback.from_user.id)
+    await callback.message.delete()
 
-        text = (
-            f"👤 {fb['userName']} | {start}\n"
-            f"📦 {product}\n\n"
-            f"💭 Отзыв: \n{review_text}\n\n"
-            f"✍️ Ответ: \n{answer}"
+    
+async def show_next_review(chat_id, user_id):
+    if user_review_index[user_id] >= len(user_feedbacks[user_id]):
+        await bot.send_message(chat_id, "Обработка отзывов завершена!", reply_markup=default_keyboard())
+        user_feedbacks.pop(user_id, None)
+        user_review_index.pop(user_id, None)
+        return
+
+    fb = user_feedbacks[user_id][user_review_index[user_id]]
+    answer = generate_answer(fb)
+
+    if answer is None:
+        user_review_index[user_id] += 1
+        await show_next_review(chat_id, user_id)
+        return
+    
+    #Сохраняем для кнопок
+    pending_reviews[fb["id"]] = {
+        "answer": answer,
+        "feedback_id": fb["id"]
+    }
+
+    review_text = f"Текст отзыва: {fb.get('text')}\nПлюсы: {fb.get('pros')} \nМинусы: {fb.get('cons')}"
+
+    start = "⭐" * fb["productValuation"]
+
+    product = fb["productDetails"]["productName"]
+
+    text = (
+        f"👤 {fb['userName']} | {start}\n"
+        f"📦 {product}\n\n"
+        f"💭 Отзыв: \n{review_text}\n\n"
+        f"✍️ Ответ: \n{answer}"
+    )
+
+#Кнопки
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        types.InlineKeyboardButton(
+            text="✅ Отправить",
+            callback_data=f"send_{fb['id']}"
+        ),
+        types.InlineKeyboardButton(
+            text="⏭️ Пропустить",
+            callback_data=f"skip_{fb['id']}"
+        ),
+        types.InlineKeyboardButton(
+            text="❌ Отменить",
+            callback_data=f"cancel_review"
         )
+    )
+    await bot.send_message(chat_id, text, reply_markup=builder.as_markup())
 
 
-        #Кнопки
-        builder = InlineKeyboardBuilder()
-        builder.add(
-            types.InlineKeyboardButton(
-                text="✅ Отправить",
-                callback_data=f"send_{fb['id']}"
-            ),
-            types.InlineKeyboardButton(
-                text="⏭️ Пропустить",
-                callback_data=f"skip_{fb['id']}"
-            )
-        )
-        try:
-            await message.answer(text, reply_markup=builder.as_markup())
-        except TelegramAPIError:
-            await message.answer(f"Ошибка при формировании отзыва...\n\n Переходим к следующему отзыву!")
-            del pending_reviews[fb["id"]]
-            continue
-
-@dp.message(F.text == "📝 Ответить на отзывы")
-async def reply_reviews(message: types.Message):
-    await cmd_reviews(message)
-        
 @dp.callback_query(F.data.startswith("send_"))
 async def on_send(callback: types.CallbackQuery):
     feedback_id = callback.data.replace("send_", "")
@@ -205,12 +264,25 @@ async def on_send(callback: types.CallbackQuery):
         await callback.message.edit_text(
             callback.message.text + "\n\n✅ ОТПРАВЛЕНО"
         )
+        user_review_index[callback.from_user.id] += 1
+        await show_next_review(callback.message.chat.id, callback.from_user.id)
+        del pending_reviews[feedback_id]
     else:
-        await callback.message.edit_text(
-            callback.message.text + "\n\n❌ ОШИБКА ОТПРАВКИ"
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            types.InlineKeyboardButton(
+            text="✅ Попробовать снова",
+            callback_data=f"send_{feedback_id}"
+            ),
+            types.InlineKeyboardButton(
+            text="⏭️ Пропустить",
+            callback_data=f"skip_{feedback_id}"
+            )
         )
-
-    del pending_reviews[feedback_id]
+        await callback.message.edit_text(
+            callback.message.text + "\n\n❌ ОШИБКА ОТПРАВКИ",
+            reply_markup=builder.as_markup()
+        )
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("skip_"))
@@ -221,8 +293,19 @@ async def on_skip(callback: types.CallbackQuery):
     await callback.message.edit_text(
         callback.message.text + "\n\n⏭️ ПРОПУЩЕНО"
     )
+    user_review_index[callback.from_user.id] += 1
+    await show_next_review(callback.message.chat.id, callback.from_user.id)
     await callback.answer()
-    
+
+@dp.callback_query(F.data == "cancel_review")
+async def on_cancel(callback: types.CallbackQuery):
+    user_feedbacks.pop(callback.from_user.id, None)
+    user_review_index.pop(callback.from_user.id, None)
+    await callback.message.edit_text("❌ ОТМЕНЕНО",
+        reply_markup=default_keyboard()
+    )
+    await callback.answer()
+
 async def main():
     init_db()
     await dp.start_polling(bot)
