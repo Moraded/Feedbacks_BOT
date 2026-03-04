@@ -39,8 +39,8 @@ class WaitToken(StatesGroup):
 #Клавиатуры
 def answermod_keyboard():
     buttons = [
-        [types.InlineKeyboardButton(text="Ручной режим", callback_data="reply_manual")],
-        [types.InlineKeyboardButton(text="Автоматичский режим", callback_data="reply_auto")]
+        [types.InlineKeyboardButton(text="✍️ Ручной режим", callback_data="reply_manual")],
+        [types.InlineKeyboardButton(text="🤖 Ответить на все", callback_data="reply_auto")]
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
@@ -57,7 +57,7 @@ def default_keyboard():
 def connect_token_keyboard():
     buttons = [
         [
-            types.InlineKeyboardButton(text="🔑 Подключить токен", callback_data="token_connect"),
+            types.InlineKeyboardButton(text="➡️🔑 Подключить токен", callback_data="token_connect"),
 
         ]
     ]
@@ -68,17 +68,17 @@ def connect_token_keyboard():
 @dp.message(Command("reset"))
 async def cmd_reset(message: types.Message):
     if not reset_token(message.from_user.id):
-        await message.answer("Ошибка сброса токена, попробуйте снова")
+        await message.answer("❌ Ошибка сброса токена, попробуйте снова")
         return
-    await message.answer("Токен сброшен.", reply_markup=connect_token_keyboard())
+    await message.answer("✅ Токен сброшен", reply_markup=connect_token_keyboard())
 
 
 @dp.callback_query(F.data == "token_reset")
 async def callback_token_reset(callback: types.CallbackQuery):
     if not reset_token(callback.from_user.id):
-        await callback.message.edit_text("Ошибка сброса токена, попробуйте снова")
+        await callback.message.edit_text("❌ Ошибка сброса токена, попробуйте снова")
         return
-    await callback.message.edit_text("Токен сброшен.", reply_markup=connect_token_keyboard())
+    await callback.message.edit_text("✅ Токен сброшен", reply_markup=connect_token_keyboard())
     await callback.answer()
 
 
@@ -105,7 +105,7 @@ async def cmd_start(message: types.Message):
 @dp.message(StateFilter(None), Command("token"))
 async def cmd_token(message: Message, state: FSMContext):
     await message.answer(
-        text="Введите токен:",
+        text="🔑 Введите токен:",
     )
     await state.set_state(WaitToken.wait_token)
 
@@ -122,27 +122,27 @@ async def insert_token(message: Message, state: FSMContext):
     await state.clear()
     token_status = check_token(token)
     if not token_status:
-        await message.answer("Непредвиденная ошибка, перезапустите команду /token")
+        await message.answer("❌ Непредвиденная ошибка при проверке токена, попробуйте снова")
         return
     if token_status == 200:
         await status_msg.edit_text("✅🔑 Токен успешно подтвержден!", reply_markup=default_keyboard())
         if not save_token(message.from_user.id, token):
-            await message.answer("Непредвиденная ошибка, перезапустите команду /token")
+            await message.answer("❌ Непредвиденная ошибка, попробуйте снова", reply_markup=default_keyboard())
             return
         return
     elif token_status == 401:
-        await status_msg.edit_text("❌🔑 Неверный токен или не авторизован!")
+        await status_msg.edit_text("❌🔑 Неверный токен или не авторизован!", reply_markup=default_keyboard())
         return
     elif token_status == 429:
-        await status_msg.edit_text("❌ Слишком много запросов!")
+        await status_msg.edit_text("❌ 🕒 Слишком много запросов!", reply_markup=default_keyboard())
         return
     else:
-        await status_msg.edit_text("❌ Другая ошибка токена!")
+        await status_msg.edit_text("❌ Другая ошибка токена!", reply_markup=default_keyboard())
         return
 
 @dp.callback_query(F.data == "token_connect")
 async def start_token_connect(callback: types.CallbackQuery, state: FSMContext):
-    msg = await callback.message.edit_text("Введите токен:")
+    msg = await callback.message.edit_text("🔑 Введите токен:")
     await state.update_data(message_id=msg.message_id)
     await state.set_state(WaitToken.wait_token)
     await callback.answer()
@@ -150,7 +150,7 @@ async def start_token_connect(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "token_replace")
 async def start_token_replace(callback: types.CallbackQuery, state: FSMContext):
-    msg = await callback.message.edit_text("Введите новый токен:")
+    msg = await callback.message.edit_text("🔑 Введите новый токен:")
     await state.update_data(message_id=msg.message_id)
     await state.set_state(WaitToken.wait_token)
     await callback.answer()
@@ -174,15 +174,16 @@ async def callback_reviews(callback: types.CallbackQuery):
     
     user_feedbacks[callback.from_user.id] = feedbacks
 
-    await callback.message.edit_text(f"Найдено отзывов: {len(feedbacks)}. Выберите режим ответов на отзывы", reply_markup=answermod_keyboard())
+    await callback.message.edit_text(f" 📊 Найдено отзывов: {len(feedbacks)}. Выберите режим ответов на отзывы", reply_markup=answermod_keyboard())
 
 
 @dp.callback_query(F.data == "reply_manual")
 async def reply_manual(callback: types.CallbackQuery):
-    await callback.message.edit_text("Отвечаем на отзывы в ручном режиме")
+    await callback.message.edit_text("⌛ Отвечаем на отзывы в ручном режиме...")
+    await callback.message.edit_text("⌛ Загружаю следующий отзыв...")
     feedbacks = user_feedbacks.get(callback.from_user.id)
     if feedbacks is None:
-        await callback.message.edit_text("Ошибка в обработке отзывов, попробуйте снова", reply_markup=default_keyboard())
+        await callback.message.edit_text("❌ Ошибка в обработке отзывов, попробуйте снова", reply_markup=default_keyboard())
         return
     user_review_index[callback.from_user.id] = 0
     await show_next_review(callback.message.chat.id, callback.from_user.id)
@@ -191,7 +192,7 @@ async def reply_manual(callback: types.CallbackQuery):
     
 async def show_next_review(chat_id, user_id):
     if user_review_index[user_id] >= len(user_feedbacks[user_id]):
-        await bot.send_message(chat_id, "Обработка отзывов завершена!", reply_markup=default_keyboard())
+        await bot.send_message(chat_id, "✅ Обработка отзывов завершена!", reply_markup=default_keyboard())
         user_feedbacks.pop(user_id, None)
         user_review_index.pop(user_id, None)
         return
@@ -235,10 +236,15 @@ async def show_next_review(chat_id, user_id):
             callback_data=f"skip_{fb['id']}"
         ),
         types.InlineKeyboardButton(
+            text="Редактировать",
+            callback_data=f"edit_{fb['id']}"
+        ),
+        types.InlineKeyboardButton(
             text="❌ Отменить",
             callback_data=f"cancel_review"
         )
     )
+    builder.adjust(3, 1)
     await bot.send_message(chat_id, text, reply_markup=builder.as_markup())
 
 
@@ -248,7 +254,7 @@ async def on_send(callback: types.CallbackQuery):
     review = pending_reviews.get(feedback_id)
 
     if not review:
-        await callback.answer("Отзыв не найден")
+        await callback.answer("❌ Отзыв не найден")
         return
     try:
         token = get_user_token(callback.from_user.id)
@@ -271,7 +277,7 @@ async def on_send(callback: types.CallbackQuery):
         builder = InlineKeyboardBuilder()
         builder.add(
             types.InlineKeyboardButton(
-            text="✅ Попробовать снова",
+            text="🔄 Попробовать снова",
             callback_data=f"send_{feedback_id}"
             ),
             types.InlineKeyboardButton(
@@ -296,6 +302,74 @@ async def on_skip(callback: types.CallbackQuery):
     user_review_index[callback.from_user.id] += 1
     await show_next_review(callback.message.chat.id, callback.from_user.id)
     await callback.answer()
+
+class EditState(StatesGroup):
+    editing = State()
+    
+@dp.message(EditState.editing)
+async def edit_review(message: Message, state: FSMContext):
+    data = await state.get_data()
+    feedback_id = data["feedback_id"]
+    pending_reviews[feedback_id]["answer"] = message.text
+    answer = pending_reviews[feedback_id]["answer"]
+    await state.clear()
+    fb = user_feedbacks[message.from_user.id][user_review_index[message.from_user.id]]
+    pending_reviews[fb["id"]] = {
+        "answer": answer,
+        "feedback_id": fb["id"]
+    }
+
+    review_text = f"Текст отзыва: {fb.get('text')}\nПлюсы: {fb.get('pros')} \nМинусы: {fb.get('cons')}"
+
+    start = "⭐" * fb["productValuation"]
+
+    product = fb["productDetails"]["productName"]
+
+    text = (
+        f"👤 {fb['userName']} | {start}\n"
+        f"📦 {product}\n\n"
+        f"💭 Отзыв: \n{review_text}\n\n"
+        f"✍️ Ответ: \n{answer}"
+    )
+
+#Кнопки
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        types.InlineKeyboardButton(
+            text="✅ Отправить",
+            callback_data=f"send_{fb['id']}"
+        ),
+        types.InlineKeyboardButton(
+            text="⏭️ Пропустить",
+            callback_data=f"skip_{fb['id']}"
+        ),
+        types.InlineKeyboardButton(
+            text="Редактировать",
+            callback_data=f"edit_{fb['id']}"
+        ),
+        types.InlineKeyboardButton(
+            text="❌ Отменить",
+            callback_data=f"cancel_review"
+        )
+    )
+    builder.adjust(3, 1)
+    await message.answer(text, reply_markup=builder.as_markup())
+
+@dp.callback_query(StateFilter(None) ,F.data.startswith("edit_"))
+async def on_edit(callback: types.CallbackQuery, state: FSMContext):
+    feedback_id = callback.data.replace("edit_", "")
+    review = pending_reviews.get(feedback_id)
+    await state.update_data(feedback_id=feedback_id)
+    if not review:
+        await callback.answer("❌ Отзыв не найден")
+        return
+    
+    await callback.message.edit_text(
+        callback.message.text + "\n\n✍️ Введите новый ответ:"
+    )
+    await state.set_state(EditState.editing)
+    await callback.answer()
+
 
 @dp.callback_query(F.data == "cancel_review")
 async def on_cancel(callback: types.CallbackQuery):
