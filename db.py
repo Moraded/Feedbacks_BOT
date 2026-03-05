@@ -33,6 +33,15 @@ def register_user(user_id):
   conn.close()
 
 
+def save_seller_info(user_id, token):
+  try:
+     conn = sqlite3.connect('users.db')
+     cursor = conn.cursor()
+     cursor.execute()
+  except sqlite3.Error:
+     return False
+
+
 def save_token(user_id, token):
   try:
     conn = sqlite3.connect('users.db')

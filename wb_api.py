@@ -1,10 +1,21 @@
 import requests
 
+
+def get_seller_info(WB_TOKEN):
+    try:
+        url = "https://common-api.wildberries.ru/api/v1/seller-info"
+        headers = {"Authorization": WB_TOKEN}
+        r = requests.get(url, headers=headers)
+        return r.json()
+    except (requests.exceptions.RequestException, KeyError, ValueError):
+        return None
+
+
 def get_wb_feedbacks(WB_TOKEN):
     try:
         url = "https://feedbacks-api.wildberries.ru/api/v1/feedbacks"
         headers = {"Authorization": WB_TOKEN}
-        params = {"isAnswered": "false", "take": 125, "skip": 0}
+        params = {"isAnswered": "false", "take": 1, "skip": 0}
         r = requests.get(url, headers=headers, params=params)
         print(f"WB status code get feedbacks: {r.status_code}")
         return r.json()["data"]["feedbacks"]
