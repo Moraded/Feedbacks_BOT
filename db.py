@@ -46,14 +46,15 @@ def save_seller_info(seller_name, user_id):
     cursor.close()
     conn.close()
     return True
-  except sqlite3.Error:
+  except sqlite3.Error as e:
+    print(e)
     return False
 
 def get_user_seller_name(token):
     try:
         conn = sqlite3.connect('users.db')
         cursor = conn.cursor()
-        cursor.execute("SELECT seller_name FROM users WHERE token = ?", (token,))
+        cursor.execute("SELECT seller_name FROM users WHERE token = ?", (token))
         seller_name = cursor.fetchone()[0]
         cursor.close()
         conn.close()

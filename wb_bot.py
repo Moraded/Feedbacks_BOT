@@ -73,10 +73,11 @@ def connect_token_keyboard():
     return keyboard
 
 
+
 @dp.message(Command("reset"))
 async def cmd_reset(message: types.Message):
     if not reset_token(message.from_user.id):
-        await message.answer("❌ Ошибка сброса токена, попробуйте снова")
+        await message.answer("❌ Ошибка сброса токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     await message.answer("✅ Токен сброшен!", reply_markup=connect_token_keyboard())
 
@@ -84,7 +85,7 @@ async def cmd_reset(message: types.Message):
 @dp.callback_query(F.data == "token_reset")
 async def callback_token_reset(callback: types.CallbackQuery):
     if not reset_token(callback.from_user.id):
-        await callback.message.edit_text("❌ Ошибка сброса токена, попробуйте снова")
+        await callback.message.edit_text("❌ Ошибка сброса токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     await callback.message.edit_text("✅ Токен сброшен!", reply_markup=connect_token_keyboard())
     await callback.answer()
@@ -156,6 +157,7 @@ async def cmd_start(message: types.Message):
             )
 
 
+
 @dp.callback_query(F.data == "check_update")
 async def callback_check_update(callback: types.CallbackQuery):
     await callback.message.edit_text("⌛ Сканирую отзывы с WB...")
@@ -208,14 +210,14 @@ async def insert_token(message: Message, state: FSMContext):
         if seller_info is not None:
             seller_name = seller_info.get("name")
             if not seller_name:
-                await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте", reply_markup=back_to_start_keyboard())
+                await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте снова", reply_markup=back_to_start_keyboard())
                 return
             if not save_seller_info(seller_name, message.from_user.id):
-                await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте", reply_markup=back_to_start_keyboard())
+                await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте снова", reply_markup=back_to_start_keyboard())
                 return
             await status_msg.edit_text("✅🔑 Токен успешно подтвержден!", reply_markup=back_to_start_keyboard())
             return
-        await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте", reply_markup=back_to_start_keyboard())
+        await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     elif token_status == 401:
         await status_msg.edit_text("❌🔑 Неверный токен или не авторизован!", reply_markup=back_to_start_keyboard())
@@ -581,6 +583,8 @@ async def on_cancel(callback: types.CallbackQuery):
     user_review_index.pop(callback.from_user.id, None)
     await callback.message.edit_text(callback.message.text +"\n\n   ❌ ОТМЕНЕНО", reply_markup=back_to_start_keyboard())
     await callback.answer()
+
+
 
 async def main():
     init_db()
