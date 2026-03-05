@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramAPIError
-from db import register_user, get_user_token, init_db, save_token, reset_token
+from db import register_user, get_user_token, init_db, save_token, reset_token, save_seller_info, get_user_seller_name
 from wb_api import get_wb_feedbacks, send_answer_to_wb, check_token, get_seller_info
 from ai import generate_answer
 
@@ -40,7 +40,7 @@ class WaitToken(StatesGroup):
 
 def back_to_start_keyboard():
     buttons = [
-        types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")
+        [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
@@ -106,13 +106,21 @@ async def cmd_start(callback: types.CallbackQuery):
             f" Бренд: {seller_brand}",
             reply_markup=default_keyboard()
             )
+        await callback.answer()
     else:
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            types.InlineKeyboardButton(
+                text="➡️🔑 Подключить токен",
+            callback_data="token_connect")
+        )
         await callback.message.edit_text(
             "* Для того, чтобы использовать бота, необходимо подключить API токен кабинета. Достаточно создать новый токен в кабинете WB с доступом к категории 'вопросы и отзывы (чтение и запись)'\n\n"
             "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
             "* Бот через API токен кабинета получает данные о отзывах, обрабатывает и генерирует ответы.\n\n"
-            "* Статус токена: ❌ Не подключен", reply_markup=connect_token_keyboard()
+            "* Статус токена: ❌ Не подключен", reply_markup=builder.as_markup()
             )
+        await callback.answer()
 
 
 
@@ -134,11 +142,17 @@ async def cmd_start(message: types.Message):
             reply_markup=default_keyboard()
             )
     else:
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            types.InlineKeyboardButton(
+                text="➡️🔑 Подключить токен",
+            callback_data="token_connect")
+        )
         await message.answer(
             "* Для того, чтобы использовать бота, необходимо подключить API токен кабинета. Достаточно создать новый токен в кабинете WB с доступом к категории 'вопросы и отзывы (чтение и запись)'\n\n"
             "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
             "* Бот через API токен кабинета получает данные о отзывах, обрабатывает и генерирует ответы.\n\n"
-            "* Статус токена: ❌ Не подключен", reply_markup=connect_token_keyboard()
+            "* Статус токена: ❌ Не подключен", reply_markup=builder.as_markup()
             )
 
 
@@ -154,7 +168,7 @@ async def callback_check_update(callback: types.CallbackQuery):
         await callback.message.edit_text(f"❌ Ошибка загрузки ответов с WB", reply_markup=default_keyboard())
         return
     if not feedbacks:
-        await callback.message.edit_text("✅ Нет неотвеченных отзывов!", reply_markup=default_keyboard())
+        await callback.message.edit_text("✅ Нет неотвеченных отзывов!", reply_markup=back_to_start_keyboard())
         return
     
     user_feedbacks[callback.from_user.id] = feedbacks
@@ -183,14 +197,25 @@ async def insert_token(message: Message, state: FSMContext):
     await message.delete()
     await state.clear()
     token_status = check_token(token)
-    if not token_status:
+    if token_status is None:
         await message.answer("❌ Непредвиденная ошибка при проверке токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     if token_status == 200:
-        await status_msg.edit_text("✅🔑 Токен успешно подтвержден!", reply_markup=back_to_start_keyboard())
         if not save_token(message.from_user.id, token):
-            await message.answer("❌ Непредвиденная ошибка, попробуйте снова", reply_markup=back_to_start_keyboard())
+            await status_msg.edit_text("❌ Непредвиденная ошибка, попробуйте снова", reply_markup=back_to_start_keyboard())
             return
+        seller_info = get_seller_info(token)
+        if seller_info is not None:
+            seller_name = seller_info.get("name")
+            if not seller_name:
+                await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте", reply_markup=back_to_start_keyboard())
+                return
+            if not save_seller_info(seller_name, message.from_user.id):
+                await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте", reply_markup=back_to_start_keyboard())
+                return
+            await status_msg.edit_text("✅🔑 Токен успешно подтвержден!", reply_markup=back_to_start_keyboard())
+            return
+        await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте", reply_markup=back_to_start_keyboard())
         return
     elif token_status == 401:
         await status_msg.edit_text("❌🔑 Неверный токен или не авторизован!", reply_markup=back_to_start_keyboard())
@@ -201,6 +226,8 @@ async def insert_token(message: Message, state: FSMContext):
     else:
         await status_msg.edit_text("❌ Другая ошибка токена!", reply_markup=back_to_start_keyboard())
         return
+    return
+
 
 @dp.callback_query(F.data == "token_connect")
 async def start_token_connect(callback: types.CallbackQuery, state: FSMContext):
