@@ -59,7 +59,7 @@ def get_user_seller_name(token):
     try:
         conn = sqlite3.connect('users.db')
         cursor = conn.cursor()
-        cursor.execute("SELECT seller_name FROM users WHERE token = ?", (token,))
+        cursor.execute("SELECT seller_name FROM users WHERE token = ?", (token))
         seller_name = cursor.fetchone()[0]
         cursor.close()
         conn.close()
