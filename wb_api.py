@@ -19,7 +19,7 @@ def get_wb_feedbacks(WB_TOKEN):
     try:
         url = "https://feedbacks-api.wildberries.ru/api/v1/feedbacks"
         headers = {"Authorization": WB_TOKEN}
-        params = {"isAnswered": "false", "take": 1, "skip": 0}
+        params = {"isAnswered": "false", "take": 100, "skip": 0}
         r = requests.get(url, headers=headers, params=params)
         return r.json()["data"]["feedbacks"]
     except (requests.exceptions.RequestException, KeyError, ValueError):
