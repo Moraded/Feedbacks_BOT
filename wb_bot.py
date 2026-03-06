@@ -15,7 +15,16 @@ from wb_api import get_wb_feedbacks, send_answer_to_wb, check_token, get_seller_
 from ai import generate_answer
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("bot.log"),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -126,6 +135,7 @@ async def cmd_start(callback: types.CallbackQuery):
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    logger.info(f"Пользователь {message.from_user.id} начал работу с ботом")
     register_user(message.from_user.id)
     token = get_user_token(message.from_user.id)
     if token:
@@ -292,37 +302,38 @@ async def reply_auto(callback: types.CallbackQuery):
     token_status = check_token(token)
     if not token_status:
         await callback.message.edit_text("❌ Непредвиденная ошибка при проверке токена, попробуйте снова", reply_markup=back_to_start_keyboard())
+        return
     if token_status != 200:
         await callback.message.edit_text("❌ Ошибка токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     counter = 0
     error_counter = 0
-    await callback.message.edit_text(f"⌛ Обработка отзывов в процессе, пожалуйста, подождите\n\n")
+    await callback.message.edit_text(f"⌛ Обработка отзывов в процессе, пожалуйста, подождите...\n\n")
     for fb in feedbacks:
         #Пока счетчик не работает как хочется
-        await callback.message.answer(f"⌛ Отвечаем на отзыв {counter+1} из {len(feedbacks)}...")
+        counter += 1
         await asyncio.sleep(0.5)
+        await callback.message.answer(f"⌛ Отвечаем на отзыв {counter} из {len(feedbacks)}...")
         answer = generate_answer(fb)
         if answer is None:
             error_counter += 1
-            await callback.message.edit_text(f"❌ Ошибка генерации ответа на отзыв {counter+1}")
+            await callback.message.edit_text(f"❌ Ошибка генерации ответа на отзыв {counter} из {len(feedbacks)}")
             if error_counter > 5:
                 await callback.message.edit_text(f"❌ Произошла критическа ошибка, попробуйте снова позже", reply_markup=back_to_start_keyboard())
                 return
             continue
-        if error_counter >= 1:
-            error_counter -=1
         succes = send_answer_to_wb(fb["id"], answer, token)
         if succes is None:
-            callback.message.edit_text("❌ Ошибка в отправке ответа на WB")
+            error_counter += 1
+            await callback.message.edit_text("❌ Ошибка в отправке ответа на WB")
             continue
-        if succes == 204:
-            counter += 1
+        if error_counter >= 1:
+            error_counter -=1
     await callback.message.edit_text(f"✅ Обработка отзывов завершена!\n\n Продолжим работу? Проверте наличие отзывов!", reply_markup=default_keyboard())
 
     user_feedbacks.pop(callback.from_user.id, None)
     user_review_index.pop(callback.from_user.id, None)
-    callback.answer()
+    await callback.answer()
 
 
 @dp.callback_query(F.data == "cancel_from_edit")
@@ -583,6 +594,7 @@ async def on_cancel(callback: types.CallbackQuery):
     await callback.answer()
 
 async def main():
+    logger.info
     init_db()
     await dp.start_polling(bot)
 

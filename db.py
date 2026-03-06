@@ -1,4 +1,7 @@
 import sqlite3
+import logging
+
+logger = logging.getLogger(__name__)
 
 def init_db():
     #База данных пользователей
@@ -20,6 +23,7 @@ def get_user_token(user_id):
         cursor.close()
         conn.close()
     except (sqlite3.Error, TypeError):
+        logger.exception("Ошибка при получения токена из базы")
         token = None
     return token
 
@@ -34,6 +38,7 @@ def register_user(user_id):
     conn.close()
     return True
   except sqlite3.Error:
+    logger.exception("Ошибка при занесении пользователя в базу данных")
     return False
 
 
@@ -47,6 +52,7 @@ def save_seller_info(seller_name, user_id):
     conn.close()
     return True
   except sqlite3.Error:
+    logger.exception("Ошибка при сохранении имени продавца в базу")
     return False
 
 def get_user_seller_name(token):
@@ -58,6 +64,7 @@ def get_user_seller_name(token):
         cursor.close()
         conn.close()
     except (sqlite3.Error, TypeError):
+        logger.exception("Ошибка при получении имени продавца из базы")
         seller_name = None
     return seller_name
 
@@ -72,6 +79,7 @@ def save_token(user_id, token):
     conn.close()
     return True
   except sqlite3.Error:
+    logger.exception("Ошибка при сохранении токена")
     return False
 
 def reset_token(user_id):
@@ -84,4 +92,5 @@ def reset_token(user_id):
     conn.close()
     return True
   except sqlite3.Error:
+    logger.exception("Ошибка при сбросе токена")
     return False

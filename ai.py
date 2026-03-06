@@ -3,7 +3,11 @@ import openai
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
+import logging
 from system_prompt import SYSTEM_PROMPT
+
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -35,6 +39,7 @@ def generate_answer(feedback):
     )
     return response.choices[0].message.content
   except openai.APIError:
+    logger.exception("Ошибка при генерации ответа на отзыв")
     return None
   
 

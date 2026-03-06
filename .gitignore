@@ -2,3 +2,4 @@
 .venv
 users.db
 __pycache__
+bot.log
