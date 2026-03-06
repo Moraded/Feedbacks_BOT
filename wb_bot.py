@@ -113,7 +113,8 @@ async def cmd_start(callback: types.CallbackQuery):
             "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
             "* Статус токена: ✅ Подключен\n\n"
             f"* Кабинет ВБ: {seller_name}"
-            f" Бренд: {seller_brand}",
+            f" Бренд: {seller_brand}\n\n"
+            "✉️ По всем вопросам писать @moraded451",
             reply_markup=default_keyboard()
             )
         await callback.answer()
@@ -149,7 +150,8 @@ async def cmd_start(message: types.Message):
             "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
             "* Статус токена: ✅ Подключен\n\n"
             f"* Кабинет ВБ: {seller_name}"
-            f" Бренд: {seller_brand}", 
+            f" Бренд: {seller_brand}\n\n"
+            "✉️ По всем вопросам писать @moraded451", 
             reply_markup=default_keyboard()
             )
     else:
@@ -315,7 +317,7 @@ async def reply_auto(callback: types.CallbackQuery):
         #Пока счетчик не работает как хочется
         counter += 1
         await asyncio.sleep(0.5)
-        await callback.message.answer(f"⌛ Отвечаем на отзыв {counter} из {len(feedbacks)}...")
+        await callback.message.edit_text(f"⌛ Отвечаем на отзыв {counter} из {len(feedbacks)}...")
         answer = generate_answer(fb)
         if answer is None:
             error_counter += 1
@@ -331,7 +333,7 @@ async def reply_auto(callback: types.CallbackQuery):
             continue
         if error_counter >= 1:
             error_counter -=1
-    await callback.message.edit_text(f"✅ Обработка отзывов завершена!\n\n Продолжим работу? Проверте наличие отзывов!", reply_markup=default_keyboard())
+    await callback.message.edit_text(f"✅ Обработка отзывов завершена!\n\n Продолжим работу? Проверьте наличие отзывов!", reply_markup=default_keyboard())
 
     user_feedbacks.pop(callback.from_user.id, None)
     user_review_index.pop(callback.from_user.id, None)
@@ -389,7 +391,7 @@ async def cancel_from_edit(callback: types.CallbackQuery):
 
 async def show_next_review(chat_id, user_id):
     if user_review_index[user_id] >= len(user_feedbacks[user_id]):
-        await bot.send_message(chat_id, "✅ Обработка отзывов завершена!\n Продолжим работу? Проверте наличие отзывов!", reply_markup=default_keyboard())
+        await bot.send_message(chat_id, "✅ Обработка отзывов завершена!\n Продолжим работу? Проверьте наличие отзывов!", reply_markup=default_keyboard())
         user_feedbacks.pop(user_id, None)
         user_review_index.pop(user_id, None)
         return
