@@ -44,6 +44,7 @@ def check_token(WB_TOKEN):
         url = "https://feedbacks-api.wildberries.ru/ping"
         headers = {"Authorization": WB_TOKEN}
         r = requests.get(url, headers=headers)
+        print ("wb status token", r.status_code)
         return r.status_code
     except requests.exceptions.RequestException:
         logger.exception("Ошибка при проверке токена")

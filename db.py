@@ -19,6 +19,10 @@ def init_db():
     conn.commit()
     cursor.close()
     conn.close()
+    
+
+def get_user_cabinets(user_id):
+    try:
 
 
 def get_active_token(user_id):
@@ -26,7 +30,7 @@ def get_active_token(user_id):
         conn = sqlite3.connect('cabinets.db')
         cursor = conn.cursor()
         cursor.execute("SELECT token FROM cabinets WHERE user_id = ? and is_active = 1", (user_id,))
-        result = cursor.fetchone()[0]
+        result = cursor.fetchone()
         token = result[0] if result else None
         cursor.close()
         conn.close()

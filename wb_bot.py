@@ -95,8 +95,9 @@ def default_keyboard():
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
-dp.callback_query(F.data == "cabinets_opt")
+@dp.callback_query(F.data == "cabinets_opt")
 async def callback_cabinets_opt(callback: types.CallbackQuery):
+    print("sdfsdfsdf")
     await callback.message.edit_text("👤 Настройки кабинета:", reply_markup=cabinets_opt_keyboard())
     
 
@@ -134,9 +135,9 @@ async def cmd_start(callback: types.CallbackQuery):
     token = get_active_token(callback.from_user.id)
     if token:
         seller_info = get_seller_info(token)
-        seller_name = seller_info["name"]
-        seller_id = seller_info["sid"]
-        seller_brand = seller_info["tradeMark"]
+        seller_name = seller_info.get("name")
+        seller_id = seller_info.get("sid")
+        seller_brand = seller_info.get("tradeMark")
         await callback.message.edit_text(
             "* Готовы продолжить работу?\n\n"
             "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
@@ -171,9 +172,9 @@ async def cmd_start(message: types.Message):
     token = get_active_token(message.from_user.id)
     if token:
         seller_info = get_seller_info(token)
-        seller_name = seller_info["name"]
-        seller_id = seller_info["sid"]
-        seller_brand = seller_info["tradeMark"]
+        seller_name = seller_info.get("name")
+        seller_id = seller_info.get("sid")
+        seller_brand = seller_info.get("tradeMark")
         await message.answer(
             "* Готовы продолжить работу?\n\n"
             "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
@@ -626,7 +627,7 @@ async def on_cancel(callback: types.CallbackQuery):
 
 
 async def main():
-    logger.info
+    logger.info("Бот запущен")
     init_db()
     await dp.start_polling(bot)
 
