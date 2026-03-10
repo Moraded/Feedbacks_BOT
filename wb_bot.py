@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramAPIError
-from db import register_user, get_user_token, init_db, save_token, reset_token, save_seller_info, get_user_seller_name
+from db import register_user, get_active_token, init_db, add_cabinet,reset_token, get_user_seller_name
 from wb_api import get_wb_feedbacks, send_answer_to_wb, check_token, get_seller_info
 from ai import generate_answer
 
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-bot = Bot(token=os.getenv("BOT_TOKEN"))
+bot = Bot(token=os.getenv("TEST_TOKEN"))
 dp = Dispatcher()
 
 
@@ -41,11 +41,33 @@ user_feedbacks = {}
 #Индекс для отслеживания текущего отзыва в ручном режиме
 user_review_index = {}
 
+#ID активного кабинета
+active_cabinet_id = {}
+
+
 
 class WaitToken(StatesGroup):
     wait_token = State()
 
 #Клавиатуры
+
+def cabinets_opt_keyboard():
+    buttons = [
+        [types.InlineKeyboardButton(text="➡️ Добавить кабинет", callback_data="add_cabinet")],
+        [types.InlineKeyboardButton(text="🔄 Сбросить токен", callback_data="token_reset")],
+        [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
+    ]
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    return keyboard
+
+
+@dp.callback_query(F.data == "add_cabinet")
+async def callback_add_cabinet(callback: types.CallbackQuery, state: FSMContext):
+    msg = await callback.message.edit_text("🔑 Введите токен для нового кабинета:")
+    await state.update_data(message_id=msg.message_id)
+    await state.set_state(WaitToken.wait_token)
+    await callback.answer()
+
 
 def back_to_start_keyboard():
     buttons = [
@@ -65,13 +87,18 @@ def answermod_keyboard():
 
 def default_keyboard():
     buttons = [
-        [types.InlineKeyboardButton(text="🔑 Заменить токен", callback_data="token_replace")],
-        [types.InlineKeyboardButton(text="🔄 Сбросить токен", callback_data="token_reset")],
+        [types.InlineKeyboardButton(text="📝 Ответить на отзывы", callback_data="reviews")],
         [types.InlineKeyboardButton(text="🔎 Проверить наличие отзывов", callback_data="check_update")],
-        [types.InlineKeyboardButton(text="📝 Ответить на отзывы", callback_data="reviews")]
+        [types.InlineKeyboardButton(text="👤 Настройки кабинета",
+        callback_data="cabinets_opt")]
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
+
+dp.callback_query(F.data == "cabinets_opt")
+async def callback_cabinets_opt(callback: types.CallbackQuery):
+    await callback.message.edit_text("👤 Настройки кабинета:", reply_markup=cabinets_opt_keyboard())
+    
 
 def connect_token_keyboard():
     buttons = [
@@ -85,7 +112,8 @@ def connect_token_keyboard():
 
 @dp.message(Command("reset"))
 async def cmd_reset(message: types.Message):
-    if not reset_token(message.from_user.id):
+    token = get_active_token(message.from_user.id)
+    if not reset_token(message.from_user.id, token):
         await message.answer("❌ Ошибка сброса токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     await message.answer("✅ Токен сброшен!", reply_markup=connect_token_keyboard())
@@ -93,7 +121,8 @@ async def cmd_reset(message: types.Message):
 
 @dp.callback_query(F.data == "token_reset")
 async def callback_token_reset(callback: types.CallbackQuery):
-    if not reset_token(callback.from_user.id):
+    token = get_active_token(callback.from_user.id)
+    if not reset_token(callback.from_user.id, token):
         await callback.message.edit_text("❌ Ошибка сброса токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     await callback.message.edit_text("✅ Токен сброшен!", reply_markup=connect_token_keyboard())
@@ -102,7 +131,7 @@ async def callback_token_reset(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "callback_start")
 async def cmd_start(callback: types.CallbackQuery):
     register_user(callback.from_user.id)
-    token = get_user_token(callback.from_user.id)
+    token = get_active_token(callback.from_user.id)
     if token:
         seller_info = get_seller_info(token)
         seller_name = seller_info["name"]
@@ -139,7 +168,7 @@ async def cmd_start(callback: types.CallbackQuery):
 async def cmd_start(message: types.Message):
     logger.info(f"Пользователь {message.from_user.id} начал работу с ботом")
     register_user(message.from_user.id)
-    token = get_user_token(message.from_user.id)
+    token = get_active_token(message.from_user.id)
     if token:
         seller_info = get_seller_info(token)
         seller_name = seller_info["name"]
@@ -173,7 +202,7 @@ async def cmd_start(message: types.Message):
 @dp.callback_query(F.data == "check_update")
 async def callback_check_update(callback: types.CallbackQuery):
     await callback.message.edit_text("⌛ Сканирую отзывы с WB...")
-    token = get_user_token(callback.from_user.id)
+    token = get_active_token(callback.from_user.id)
     if not token:
         await callback.message.edit_text("Токен отсутствует, попробуйте сначала ввести токен", reply_markup=connect_token_keyboard())
         return
@@ -212,24 +241,21 @@ async def insert_token(message: Message, state: FSMContext):
     await state.clear()
     token_status = check_token(token)
     if token_status is None:
-        await message.answer("❌ Непредвиденная ошибка при проверке токена, попробуйте снова", reply_markup=back_to_start_keyboard())
+        await status_msg.edit_text("❌ Непредвиденная ошибка при проверке токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     if token_status == 200:
-        if not save_token(message.from_user.id, token):
-            await status_msg.edit_text("❌ Непредвиденная ошибка, попробуйте снова", reply_markup=back_to_start_keyboard())
-            return
         seller_info = get_seller_info(token)
         if seller_info is not None:
             seller_name = seller_info.get("name")
-            if not seller_name:
+            brand_name = seller_info.get("tradeMark")
+            if not seller_name or not brand_name:
                 await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте снова", reply_markup=back_to_start_keyboard())
                 return
-            if not save_seller_info(seller_name, message.from_user.id):
-                await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте снова", reply_markup=back_to_start_keyboard())
+            if not add_cabinet(message.from_user.id, token, seller_name, brand_name):
+                await status_msg.edit_text("❌ Непредвиденная ошибка, попробуйте снова", reply_markup=back_to_start_keyboard())
                 return
             await status_msg.edit_text("✅🔑 Токен успешно подтвержден!", reply_markup=back_to_start_keyboard())
             return
-        await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     elif token_status == 401:
         await status_msg.edit_text("❌🔑 Неверный токен или не авторизован!", reply_markup=back_to_start_keyboard())
@@ -262,7 +288,7 @@ async def start_token_replace(callback: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "reviews")
 async def callback_reviews(callback: types.CallbackQuery):
     await callback.message.edit_text("⌛ Загружаю отзывы с WB...")
-    token = get_user_token(callback.from_user.id)
+    token = get_active_token(callback.from_user.id)
     if not token:
         await callback.message.edit_text("❌ Токен отсутствует!", reply_markup=connect_token_keyboard())
         return
@@ -299,7 +325,7 @@ async def reply_auto(callback: types.CallbackQuery):
     if feedbacks is None:
         await callback.message.edit_text("❌ Ошибка в обработке отзывов, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
-    token = get_user_token(callback.from_user.id)
+    token = get_active_token(callback.from_user.id)
     if token is None:
         await callback.message.edit_text("❌ Ошибка чтения токена", reply_markup=back_to_start_keyboard())
         return
@@ -462,7 +488,7 @@ async def on_send(callback: types.CallbackQuery):
         await callback.answer("❌ Отзыв не найден")
         return
     try:
-        token = get_user_token(callback.from_user.id)
+        token = get_active_token(callback.from_user.id)
         success = send_answer_to_wb(feedback_id, review["answer"], token)
     except requests.exceptions.RequestException:
         await callback.message.edit_text(
