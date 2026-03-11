@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramAPIError
-from db import register_user, get_active_token, init_db, add_cabinet,reset_token, get_user_seller_name
+from db import register_user, get_active_token, init_db, add_cabinet,reset_token, get_user_cabinets, switch_cabinet
 from wb_api import get_wb_feedbacks, send_answer_to_wb, check_token, get_seller_info
 from ai import generate_answer
 
@@ -53,12 +53,51 @@ class WaitToken(StatesGroup):
 
 def cabinets_opt_keyboard():
     buttons = [
-        [types.InlineKeyboardButton(text="➡️ Добавить кабинет", callback_data="add_cabinet")],
+        [types.InlineKeyboardButton(text="▶️ Выбрать кабинет", callback_data="select_cabinet")],
+        [types.InlineKeyboardButton(text="🗝️ Добавить кабинет", callback_data="add_cabinet")],
         [types.InlineKeyboardButton(text="🔄 Сбросить токен", callback_data="token_reset")],
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
+
+
+@dp.callback_query(F.data == "select_cabinet")
+async def callback_select_cabinet(callback: types.CallbackQuery):
+    list_user_cabinets = get_user_cabinets(callback.from_user.id)
+    if not list_user_cabinets:
+        await callback.message.edit_text("❌ У вас нет сохраненных кабинетов, добавьте кабинет", reply_markup=back_to_start_keyboard())
+        return
+    builder = InlineKeyboardBuilder()
+    for cabinet in list_user_cabinets:
+        cabinet_id = cabinet[0]
+        seller_name = cabinet[1]
+        brand_name = cabinet[2]
+        is_active = cabinet[3]
+        button_text = f"{seller_name} | {brand_name}"
+        if is_active:
+            button_text += " ✅"
+        builder.add(
+            types.InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"switch_{cabinet_id}"
+            )
+        )
+    builder.add(
+        types.InlineKeyboardButton(
+            text="◀️ Назад", callback_data="callback_start"
+        )
+    )
+    builder.adjust(1)
+    await callback.message.edit_text("📂 Выберите кабинет для работы:", reply_markup=builder.as_markup())
+
+@dp.callback_query(F.data.startswith("switch_"))
+async def callback_switch_cabinet(callback: types.CallbackQuery):
+    cabinet_id = callback.data.replace("switch_", "")
+    if not switch_cabinet(callback.from_user.id, cabinet_id):
+        await callback.message.edit_text("❌ Ошибка при переключении кабинета, попробуйте снова", reply_markup=back_to_start_keyboard())
+        return
+    await callback_select_cabinet(callback)
 
 
 @dp.callback_query(F.data == "add_cabinet")
@@ -117,7 +156,7 @@ async def cmd_reset(message: types.Message):
     if not reset_token(message.from_user.id, token):
         await message.answer("❌ Ошибка сброса токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
-    await message.answer("✅ Токен сброшен!", reply_markup=connect_token_keyboard())
+    await message.answer("✅ Токен сброшен!", reply_markup=back_to_start_keyboard())
 
 
 @dp.callback_query(F.data == "token_reset")
@@ -126,18 +165,39 @@ async def callback_token_reset(callback: types.CallbackQuery):
     if not reset_token(callback.from_user.id, token):
         await callback.message.edit_text("❌ Ошибка сброса токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
-    await callback.message.edit_text("✅ Токен сброшен!", reply_markup=connect_token_keyboard())
+    await callback.message.edit_text("✅ Токен сброшен!", reply_markup=back_to_start_keyboard())
     await callback.answer()
 
 @dp.callback_query(F.data == "callback_start")
 async def cmd_start(callback: types.CallbackQuery):
     register_user(callback.from_user.id)
     token = get_active_token(callback.from_user.id)
-    if token:
+    cabinets_status = get_user_cabinets(callback.from_user.id)
+    if cabinets_status is None:
+        await callback.message.edit_text("❌ Ошибка при загрузки кабинетов, попробуйте снова", reply_markup=back_to_start_keyboard())
+        return
+    if not cabinets_status:
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            types.InlineKeyboardButton(text="➡️🔑 Подключить токен", callback_data="token_connect")
+        )
+        await callback.message.edit_text(
+            "* Для того, чтобы использовать бота, необходимо подключить API токен кабинета. Достаточно создать новый токен в кабинете WB с доступом к категории 'вопросы и отзывы (чтение и запись)'\n\n"
+            "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
+            "* Бот через API токен кабинета получает данные о отзывах, обрабатывает и генерирует ответы.\n\n"
+            "* Статус токена: ❌ Не подключен", reply_markup=builder.as_markup()
+            )
+        await callback.answer()
+        return
+    elif token:
         seller_info = get_seller_info(token)
         seller_name = seller_info.get("name")
         seller_id = seller_info.get("sid")
         seller_brand = seller_info.get("tradeMark")
+        if seller_info is None:
+            await callback.message.edit_text("❌ Не удалось получить данные кабинета", reply_markup=back_to_start_keyboard())
+            await callback.answer()
+            return
         await callback.message.edit_text(
             "* Готовы продолжить работу?\n\n"
             "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
@@ -148,21 +208,11 @@ async def cmd_start(callback: types.CallbackQuery):
             reply_markup=default_keyboard()
             )
         await callback.answer()
+        return
     else:
-        builder = InlineKeyboardBuilder()
-        builder.add(
-            types.InlineKeyboardButton(
-                text="➡️🔑 Подключить токен",
-            callback_data="token_connect")
-        )
-        await callback.message.edit_text(
-            "* Для того, чтобы использовать бота, необходимо подключить API токен кабинета. Достаточно создать новый токен в кабинете WB с доступом к категории 'вопросы и отзывы (чтение и запись)'\n\n"
-            "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
-            "* Бот через API токен кабинета получает данные о отзывах, обрабатывает и генерирует ответы.\n\n"
-            "* Статус токена: ❌ Не подключен", reply_markup=builder.as_markup()
-            )
+        await callback_select_cabinet(callback)
         await callback.answer()
-
+        return
 
 
 @dp.message(Command("start"))
@@ -170,26 +220,14 @@ async def cmd_start(message: types.Message):
     logger.info(f"Пользователь {message.from_user.id} начал работу с ботом")
     register_user(message.from_user.id)
     token = get_active_token(message.from_user.id)
-    if token:
-        seller_info = get_seller_info(token)
-        seller_name = seller_info.get("name")
-        seller_id = seller_info.get("sid")
-        seller_brand = seller_info.get("tradeMark")
-        await message.answer(
-            "* Готовы продолжить работу?\n\n"
-            "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
-            "* Статус токена: ✅ Подключен\n\n"
-            f"* Кабинет ВБ: {seller_name}"
-            f" Бренд: {seller_brand}\n\n"
-            "✉️ По всем вопросам писать @moraded451", 
-            reply_markup=default_keyboard()
-            )
-    else:
+    cabinets_status = get_user_cabinets(message.from_user.id)
+    if cabinets_status is None:
+        await message.answer("❌ Ошибка при загрузки кабинетов, попробуйте снова", reply_markup=back_to_start_keyboard())
+        return
+    if not cabinets_status:
         builder = InlineKeyboardBuilder()
         builder.add(
-            types.InlineKeyboardButton(
-                text="➡️🔑 Подключить токен",
-            callback_data="token_connect")
+            types.InlineKeyboardButton(text="➡️🔑 Подключить токен", callback_data="token_connect")
         )
         await message.answer(
             "* Для того, чтобы использовать бота, необходимо подключить API токен кабинета. Достаточно создать новый токен в кабинете WB с доступом к категории 'вопросы и отзывы (чтение и запись)'\n\n"
@@ -197,6 +235,48 @@ async def cmd_start(message: types.Message):
             "* Бот через API токен кабинета получает данные о отзывах, обрабатывает и генерирует ответы.\n\n"
             "* Статус токена: ❌ Не подключен", reply_markup=builder.as_markup()
             )
+        return
+    elif token:
+        seller_info = get_seller_info(token)
+        seller_name = seller_info.get("name")
+        seller_id = seller_info.get("sid")
+        seller_brand = seller_info.get("tradeMark")
+        if seller_info is None:
+            await message.answer("❌ Не удалось получить данные кабинета", reply_markup=back_to_start_keyboard())
+            return
+        await message.answer(
+            "* Готовы продолжить работу?\n\n"
+            "* Маяк Селлеров - бот поможет вам автоматизировать процесс ответов на отзывы.\n\n"
+            "* Статус токена: ✅ Подключен\n\n"
+            f"* Кабинет ВБ: {seller_name}"
+            f" Бренд: {seller_brand}\n\n"
+            "✉️ По всем вопросам писать @moraded451",
+            reply_markup=default_keyboard()
+            )
+        return
+    else:
+        list_user_cabinets = get_user_cabinets(message.from_user.id)
+        if not list_user_cabinets:
+            await message.answer("❌ У вас нет сохраненных кабинетов, добавьте кабинет", reply_markup=back_to_start_keyboard())
+            return
+        builder = InlineKeyboardBuilder()
+        for cabinet in list_user_cabinets:
+            cabinet_id = cabinet[0]
+            seller_name = cabinet[1]
+            brand_name = cabinet[2]
+            is_active = cabinet[3]
+            button_text = f"{seller_name} | {brand_name}"
+            if is_active:
+                button_text += " ✅"
+            builder.add(
+                types.InlineKeyboardButton(
+                text=button_text,
+                    callback_data=f"switch_{cabinet_id}"
+                )
+            )
+        builder.adjust(1)
+        await message.answer("📂 Выберите кабинет для работы:", reply_markup=builder.as_markup())
+        return
 
 
 

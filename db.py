@@ -23,6 +23,31 @@ def init_db():
 
 def get_user_cabinets(user_id):
     try:
+      conn = sqlite3.connect("cabinets.db")
+      cursor = conn.cursor()
+      cursor.execute("SELECT id, seller_name, brand_name, is_active FROM cabinets WHERE user_id = ?", (user_id,))
+      result = cursor.fetchall()
+      cursor.close()
+      conn.close()
+    except (sqlite3.Error, TypeError):
+      logger.exception("Ошибка при получении списка кабинетов")
+      result = None
+    return result
+
+
+def switch_cabinet(user_id, id):
+    try:
+      conn = sqlite3.connect("cabinets.db")
+      cursor = conn.cursor()
+      cursor.execute("UPDATE cabinets SET is_active = 0 WHERE user_id = ? AND is_active = 1", (user_id,))
+      cursor.execute("UPDATE cabinets SET is_active = 1 WHERE id = ?", (id,))
+      conn.commit()
+      cursor.close()
+      conn.close()
+    except (sqlite3.Error, TypeError):
+      logger.exception("Ошибка при получении списка кабинетов")
+      return False
+    return True
 
 
 def get_active_token(user_id):
@@ -54,19 +79,6 @@ def register_user(user_id):
     return False
 
 
-#def save_seller_info(seller_name, user_id, token):
-  try:
-    conn = sqlite3.connect('cabinets.db')
-    cursor = conn.cursor()
-    cursor.execute("UPDATE cabinets SET seller_name = ? WHERE user_id = ? and token = ? and brand_name = ?", (seller_name, user_id, token,))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return True
-  except sqlite3.Error:
-    logger.exception("Ошибка при сохранении имени продавца в базу")
-    return False
-
 def get_user_seller_name(token):
     try:
         conn = sqlite3.connect('cabinets.db')
@@ -85,11 +97,8 @@ def add_cabinet(user_id, token, seller_name, brand_name):
   try:
     conn = sqlite3.connect('cabinets.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM cabinets WHERE user_id = ?", (user_id,))
-    if cursor.fetchone()[0] == 0:
-      is_active = 1
-    else:
-      is_active = 0
+    is_active = 1
+    cursor.execute("UPDATE cabinets SET is_active = 0 WHERE user_id = ?", (user_id,))
     cursor.execute("INSERT INTO cabinets (user_id, token, seller_name, brand_name, is_active) VALUES (?, ?, ?, ?, ?)", (user_id, token, seller_name, brand_name, is_active))
     conn.commit()
     cursor.close()
@@ -110,4 +119,5 @@ def reset_token(user_id, token):
     return True
   except sqlite3.Error:
     logger.exception("Ошибка при сбросе токена")
+    conn.close()
     return False
