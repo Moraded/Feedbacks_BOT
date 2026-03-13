@@ -4,26 +4,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 def init_db():
-    #База данных пользователей
-    conn = sqlite3.connect('users.db')
+    #База данных кабинетов и токенов и юзеров
+    conn = sqlite3.connect('bot.db')
     cursor = conn.cursor()
     cursor.execute('CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)')
+    cursor.execute('CREATE TABLE IF NOT EXISTS cabinets (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, token TEXT, seller_name TEXT, brand_name TEXT, is_active INTEGER DEFAULT 0, UNIQUE(user_id, token))')
     conn.commit()
     cursor.close()
     conn.close()
-    
-    #База данных кабинетов и токенов
-    conn = sqlite3.connect('cabinets.db')
-    cursor = conn.cursor()
-    cursor.execute('CREATE TABLE IF NOT EXISTS cabinets (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, token TEXT, seller_name TEXT, brand_name TEXT, is_active INTEGER DEFAULT 0)')
-    conn.commit()
-    cursor.close()
-    conn.close()
-    
+
 
 def get_user_cabinets(user_id):
     try:
-      conn = sqlite3.connect("cabinets.db")
+      conn = sqlite3.connect("bot.db")
       cursor = conn.cursor()
       cursor.execute("SELECT id, seller_name, brand_name, is_active FROM cabinets WHERE user_id = ?", (user_id,))
       result = cursor.fetchall()
@@ -37,10 +30,10 @@ def get_user_cabinets(user_id):
 
 def switch_cabinet(user_id, id):
     try:
-      conn = sqlite3.connect("cabinets.db")
+      conn = sqlite3.connect("bot.db")
       cursor = conn.cursor()
       cursor.execute("UPDATE cabinets SET is_active = 0 WHERE user_id = ? AND is_active = 1", (user_id,))
-      cursor.execute("UPDATE cabinets SET is_active = 1 WHERE id = ?", (id,))
+      cursor.execute("UPDATE cabinets SET is_active = 1 WHERE id = ? AND user_id = ?", (id, user_id))
       conn.commit()
       cursor.close()
       conn.close()
@@ -52,7 +45,7 @@ def switch_cabinet(user_id, id):
 
 def get_active_token(user_id):
     try:
-        conn = sqlite3.connect('cabinets.db')
+        conn = sqlite3.connect('bot.db')
         cursor = conn.cursor()
         cursor.execute("SELECT token FROM cabinets WHERE user_id = ? and is_active = 1", (user_id,))
         result = cursor.fetchone()
@@ -67,7 +60,7 @@ def get_active_token(user_id):
 
 def register_user(user_id):
   try:
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('bot.db')
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO users VALUES (?)", (user_id,))
     conn.commit()
@@ -81,9 +74,9 @@ def register_user(user_id):
 
 def get_user_seller_name(token):
     try:
-        conn = sqlite3.connect('cabinets.db')
+        conn = sqlite3.connect('bot.db')
         cursor = conn.cursor()
-        cursor.execute("SELECT seller_name FROM cabinets WHERE token = ?", (token))
+        cursor.execute("SELECT seller_name FROM cabinets WHERE token = ?", (token,))
         seller_name = cursor.fetchone()[0]
         cursor.close()
         conn.close()
@@ -95,7 +88,7 @@ def get_user_seller_name(token):
 
 def add_cabinet(user_id, token, seller_name, brand_name):
   try:
-    conn = sqlite3.connect('cabinets.db')
+    conn = sqlite3.connect('bot.db')
     cursor = conn.cursor()
     is_active = 1
     cursor.execute("UPDATE cabinets SET is_active = 0 WHERE user_id = ?", (user_id,))
@@ -104,13 +97,17 @@ def add_cabinet(user_id, token, seller_name, brand_name):
     cursor.close()
     conn.close()
     return True
+  except sqlite3.IntegrityError as e:
+    logger.exception(f"Ошибка дублирования данных или иная: {e}")
+    return "duplicate"
   except sqlite3.Error:
     logger.exception("Ошибка при сохранении токена")
     return False
 
+
 def reset_token(user_id, token):
   try:
-    conn = sqlite3.connect('cabinets.db')
+    conn = sqlite3.connect('bot.db')
     cursor = conn.cursor()
     cursor.execute("DELETE FROM cabinets WHERE user_id = ? AND token = ?", (user_id, token))
     conn.commit()
@@ -119,5 +116,4 @@ def reset_token(user_id, token):
     return True
   except sqlite3.Error:
     logger.exception("Ошибка при сбросе токена")
-    conn.close()
     return False

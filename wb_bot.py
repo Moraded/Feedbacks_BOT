@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramAPIError
-from db import register_user, get_active_token, init_db, add_cabinet,reset_token, get_user_cabinets, switch_cabinet
+from db import register_user, get_active_token, init_db, add_cabinet,reset_token, get_user_cabinets, switch_cabinet, get_user_seller_name
 from wb_api import get_wb_feedbacks, send_answer_to_wb, check_token, get_seller_info
 from ai import generate_answer
 
@@ -34,15 +34,14 @@ dp = Dispatcher()
 
 #Хранилище отзывов для кнопок
 pending_reviews = {}
-
 #Хранилище отзывов для режима ответов
 user_feedbacks = {}
-
 #Индекс для отслеживания текущего отзыва в ручном режиме
 user_review_index = {}
-
 #ID активного кабинета
 active_cabinet_id = {}
+#Флаг для остановки ответов в автоматизированом режиме
+flag_stop_reply_auto = {}
 
 
 
@@ -50,16 +49,16 @@ class WaitToken(StatesGroup):
     wait_token = State()
 
 #Клавиатуры
-
 def cabinets_opt_keyboard():
     buttons = [
         [types.InlineKeyboardButton(text="▶️ Выбрать кабинет", callback_data="select_cabinet")],
-        [types.InlineKeyboardButton(text="🗝️ Добавить кабинет", callback_data="add_cabinet")],
+        [types.InlineKeyboardButton(text="🔑 Добавить кабинет", callback_data="add_cabinet")],
         [types.InlineKeyboardButton(text="🔄 Сбросить токен", callback_data="token_reset")],
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
+
 
 
 @dp.callback_query(F.data == "select_cabinet")
@@ -91,6 +90,8 @@ async def callback_select_cabinet(callback: types.CallbackQuery):
     builder.adjust(1)
     await callback.message.edit_text("📂 Выберите кабинет для работы:", reply_markup=builder.as_markup())
 
+
+
 @dp.callback_query(F.data.startswith("switch_"))
 async def callback_switch_cabinet(callback: types.CallbackQuery):
     cabinet_id = callback.data.replace("switch_", "")
@@ -98,6 +99,7 @@ async def callback_switch_cabinet(callback: types.CallbackQuery):
         await callback.message.edit_text("❌ Ошибка при переключении кабинета, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     await callback_select_cabinet(callback)
+
 
 
 @dp.callback_query(F.data == "add_cabinet")
@@ -108,12 +110,15 @@ async def callback_add_cabinet(callback: types.CallbackQuery, state: FSMContext)
     await callback.answer()
 
 
+
 def back_to_start_keyboard():
     buttons = [
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
+
+
 
 def answermod_keyboard():
     buttons = [
@@ -123,6 +128,8 @@ def answermod_keyboard():
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
+
+
 
 def default_keyboard():
     buttons = [
@@ -136,9 +143,11 @@ def default_keyboard():
 
 @dp.callback_query(F.data == "cabinets_opt")
 async def callback_cabinets_opt(callback: types.CallbackQuery):
-    print("sdfsdfsdf")
-    await callback.message.edit_text("👤 Настройки кабинета:", reply_markup=cabinets_opt_keyboard())
-    
+    token = get_active_token(callback.from_user.id)
+    seller_name = get_user_seller_name(token)
+    await callback.message.edit_text(f"✅ Активный кабинет: {seller_name}\n\n👤 Настройки кабинета:", reply_markup=cabinets_opt_keyboard())
+
+
 
 def connect_token_keyboard():
     buttons = [
@@ -159,6 +168,7 @@ async def cmd_reset(message: types.Message):
     await message.answer("✅ Токен сброшен!", reply_markup=back_to_start_keyboard())
 
 
+
 @dp.callback_query(F.data == "token_reset")
 async def callback_token_reset(callback: types.CallbackQuery):
     token = get_active_token(callback.from_user.id)
@@ -168,8 +178,10 @@ async def callback_token_reset(callback: types.CallbackQuery):
     await callback.message.edit_text("✅ Токен сброшен!", reply_markup=back_to_start_keyboard())
     await callback.answer()
 
+
+
 @dp.callback_query(F.data == "callback_start")
-async def cmd_start(callback: types.CallbackQuery):
+async def callback_start(callback: types.CallbackQuery):
     register_user(callback.from_user.id)
     token = get_active_token(callback.from_user.id)
     cabinets_status = get_user_cabinets(callback.from_user.id)
@@ -215,8 +227,9 @@ async def cmd_start(callback: types.CallbackQuery):
         return
 
 
+
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message):
+async def command_start(message: types.Message):
     logger.info(f"Пользователь {message.from_user.id} начал работу с ботом")
     register_user(message.from_user.id)
     token = get_active_token(message.from_user.id)
@@ -332,7 +345,11 @@ async def insert_token(message: Message, state: FSMContext):
             if not seller_name or not brand_name:
                 await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте снова", reply_markup=back_to_start_keyboard())
                 return
-            if not add_cabinet(message.from_user.id, token, seller_name, brand_name):
+            add_cabinet_status = add_cabinet(message.from_user.id, token, seller_name, brand_name)
+            if add_cabinet_status == "duplicate":
+                await status_msg.edit_text("❌ Скорее всего такой токен уже существует, проверьте в списке подключенных кабинетов", reply_markup=back_to_start_keyboard())
+                return
+            if not add_cabinet_status:
                 await status_msg.edit_text("❌ Непредвиденная ошибка, попробуйте снова", reply_markup=back_to_start_keyboard())
                 return
             await status_msg.edit_text("✅🔑 Токен успешно подтвержден!", reply_markup=back_to_start_keyboard())
@@ -348,6 +365,7 @@ async def insert_token(message: Message, state: FSMContext):
         await status_msg.edit_text("❌ Другая ошибка токена!", reply_markup=back_to_start_keyboard())
         return
     return
+
 
 
 @dp.callback_query(F.data == "token_connect")
@@ -387,6 +405,7 @@ async def callback_reviews(callback: types.CallbackQuery):
     await callback.message.edit_text(f" 📊 Найдено отзывов: {len(feedbacks)}. Выберите режим ответов на отзывы:\n\n РУЧНОЙ РЕЖИМ: отвечать на отзывы по одному, ИИ сгенерирует ответы.\n ОТВЕТИТЬ НА ВСЕ: Полностью автоматизированный процесс, действия от вас не нужны", reply_markup=answermod_keyboard())
 
 
+
 @dp.callback_query(F.data == "reply_manual")
 async def reply_manual(callback: types.CallbackQuery):
     await callback.message.edit_text("⌛ Отвечаем на отзывы в ручном режиме...")
@@ -399,8 +418,16 @@ async def reply_manual(callback: types.CallbackQuery):
     await callback.message.delete()
 
 
+
 @dp.callback_query(F.data == "reply_auto")
 async def reply_auto(callback: types.CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        types.InlineKeyboardButton(
+            text = "❌ Отмена",
+            callback_data="callback_stop_reply_auto"
+        )
+    )
     await callback.message.edit_text("⌛ Отвечаем на отзывы в автоматическом режиме...")
     feedbacks = user_feedbacks.get(callback.from_user.id)
     if feedbacks is None:
@@ -420,11 +447,19 @@ async def reply_auto(callback: types.CallbackQuery):
     counter = 0
     error_counter = 0
     await callback.message.edit_text(f"⌛ Обработка отзывов в процессе, пожалуйста, подождите...\n\n")
+    flag_stop_reply_auto[callback.from_user.id] = False
     for fb in feedbacks:
+        flag = flag_stop_reply_auto.get(callback.from_user.id)
+        if flag == True:
+            await callback.message.edit_text("❌ Обработка отзывов остановлена.", reply_markup=back_to_start_keyboard())
+            flag_stop_reply_auto[callback.from_user.id] = False
+            user_feedbacks.pop(callback.from_user.id, None)
+            user_review_index.pop(callback.from_user.id, None)
+            return
         #Пока счетчик не работает как хочется
         counter += 1
         await asyncio.sleep(0.5)
-        await callback.message.edit_text(f"⌛ Отвечаем на отзыв {counter} из {len(feedbacks)}...")
+        await callback.message.edit_text(f"⌛ Отвечаем на отзыв {counter} из {len(feedbacks)}...", reply_markup=builder.as_markup())
         answer = generate_answer(fb)
         if answer is None:
             error_counter += 1
@@ -446,6 +481,9 @@ async def reply_auto(callback: types.CallbackQuery):
     user_review_index.pop(callback.from_user.id, None)
     await callback.answer()
 
+@dp.callback_query(F.data == "callback_stop_reply_auto")
+async def stop_reply_auto(callback: types.CallbackQuery):
+    flag_stop_reply_auto[callback.from_user.id] = True
 
 @dp.callback_query(F.data == "cancel_from_edit")
 async def cancel_from_edit(callback: types.CallbackQuery):
@@ -471,6 +509,8 @@ async def cancel_from_edit(callback: types.CallbackQuery):
         f"✍️ Ответ: \n{answer}"
     )
 
+
+
 #Кнопки
     builder = InlineKeyboardBuilder()
     builder.add(
@@ -494,6 +534,7 @@ async def cancel_from_edit(callback: types.CallbackQuery):
     builder.adjust(3, 1)
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
+
 
 
 async def show_next_review(chat_id, user_id):
