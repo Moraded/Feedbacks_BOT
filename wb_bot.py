@@ -53,7 +53,7 @@ def cabinets_opt_keyboard():
     buttons = [
         [types.InlineKeyboardButton(text="▶️ Выбрать кабинет", callback_data="select_cabinet")],
         [types.InlineKeyboardButton(text="🔑 Добавить кабинет", callback_data="add_cabinet")],
-        [types.InlineKeyboardButton(text="🔄 Сбросить токен", callback_data="token_reset")],
+        [types.InlineKeyboardButton(text="🔄 Сбросить токен текущего кабинета", callback_data="token_reset")],
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -297,10 +297,11 @@ async def command_start(message: types.Message):
 async def callback_check_update(callback: types.CallbackQuery):
     await callback.message.edit_text("⌛ Сканирую отзывы с WB...")
     token = get_active_token(callback.from_user.id)
+    seller_name = get_user_seller_name(token)
     if not token:
         await callback.message.edit_text("Токен отсутствует, попробуйте сначала ввести токен", reply_markup=connect_token_keyboard())
         return
-    feedbacks = get_wb_feedbacks(token)
+    feedbacks = await asyncio.to_thread(get_wb_feedbacks, token)
     if feedbacks is None:
         await callback.message.edit_text(f"❌ Ошибка загрузки ответов с WB", reply_markup=default_keyboard())
         return
@@ -310,7 +311,7 @@ async def callback_check_update(callback: types.CallbackQuery):
     
     user_feedbacks[callback.from_user.id] = feedbacks
 
-    await callback.message.edit_text(f"У вас есть новые отзывы! 📊 Найдено отзывов: {len(feedbacks)}", reply_markup=default_keyboard())
+    await callback.message.edit_text(f"У вас есть новые отзывы! 📊 Найдено отзывов: {len(feedbacks)}\n\n👤 Активный кабинет: {seller_name}", reply_markup=default_keyboard())
 
 
 
@@ -391,7 +392,7 @@ async def callback_reviews(callback: types.CallbackQuery):
     if not token:
         await callback.message.edit_text("❌ Токен отсутствует!", reply_markup=connect_token_keyboard())
         return
-    feedbacks = get_wb_feedbacks(token)
+    feedbacks = await asyncio.to_thread(get_wb_feedbacks, token)
     #Проверка на ошибки загрузки
     if feedbacks is None:
         await callback.message.edit_text(f"❌ Ошибка загрузки ответов с WB", reply_markup=back_to_start_keyboard())
@@ -402,7 +403,7 @@ async def callback_reviews(callback: types.CallbackQuery):
     
     user_feedbacks[callback.from_user.id] = feedbacks
 
-    await callback.message.edit_text(f" 📊 Найдено отзывов: {len(feedbacks)}. Выберите режим ответов на отзывы:\n\n РУЧНОЙ РЕЖИМ: отвечать на отзывы по одному, ИИ сгенерирует ответы.\n ОТВЕТИТЬ НА ВСЕ: Полностью автоматизированный процесс, действия от вас не нужны", reply_markup=answermod_keyboard())
+    await callback.message.edit_text(f" 📊 Найдено отзывов: {len(feedbacks)}. Выберите режим ответов на отзывы:\n\n ✍️ РУЧНОЙ РЕЖИМ: отвечать на отзывы по одному, ИИ сгенерирует ответы.\n⚙️ ОТВЕТИТЬ НА ВСЕ: Полностью автоматизированный процесс, действия от вас не нужны", reply_markup=answermod_keyboard())
 
 
 
@@ -456,11 +457,10 @@ async def reply_auto(callback: types.CallbackQuery):
             user_feedbacks.pop(callback.from_user.id, None)
             user_review_index.pop(callback.from_user.id, None)
             return
-        #Пока счетчик не работает как хочется
         counter += 1
         await asyncio.sleep(0.5)
         await callback.message.edit_text(f"⌛ Отвечаем на отзыв {counter} из {len(feedbacks)}...", reply_markup=builder.as_markup())
-        answer = generate_answer(fb)
+        answer = await asyncio.to_thread(generate_answer, fb, counter)
         if answer is None:
             error_counter += 1
             await callback.message.edit_text(f"❌ Ошибка генерации ответа на отзыв {counter} из {len(feedbacks)}")
@@ -468,7 +468,7 @@ async def reply_auto(callback: types.CallbackQuery):
                 await callback.message.edit_text(f"❌ Произошла критическа ошибка, попробуйте снова позже", reply_markup=back_to_start_keyboard())
                 return
             continue
-        succes = send_answer_to_wb(fb["id"], answer, token)
+        succes = await asyncio.to_thread(send_answer_to_wb, fb["id"], answer, token)
         if succes is None:
             error_counter += 1
             await callback.message.edit_text("❌ Ошибка в отправке ответа на WB")
@@ -543,9 +543,9 @@ async def show_next_review(chat_id, user_id):
         user_feedbacks.pop(user_id, None)
         user_review_index.pop(user_id, None)
         return
-
+    review_number = user_review_index[user_id] + 1
     fb = user_feedbacks[user_id][user_review_index[user_id]]
-    answer = generate_answer(fb)
+    answer = await asyncio.to_thread(generate_answer, fb, review_number)
 
     if answer is None:
         user_review_index[user_id] += 1
@@ -611,7 +611,7 @@ async def on_send(callback: types.CallbackQuery):
         return
     try:
         token = get_active_token(callback.from_user.id)
-        success = send_answer_to_wb(feedback_id, review["answer"], token)
+        success = await asyncio.to_thread(send_answer_to_wb, feedback_id, review["answer"], token)
     except requests.exceptions.RequestException:
         await callback.message.edit_text(
             callback.message.text + "\n\n❌ ОШИБКА API", reply_markup=back_to_start_keyboard()
