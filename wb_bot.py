@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-bot = Bot(token=os.getenv("TEST_TOKEN"))
+bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
 
 
