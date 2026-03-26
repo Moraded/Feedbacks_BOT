@@ -1,5 +1,5 @@
 import asyncio
-import requests
+import aiohttp
 import os
 import logging
 from dotenv import load_dotenv
@@ -10,9 +10,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramAPIError
-from db import register_user, get_active_token, init_db, add_cabinet,reset_token, get_user_cabinets, switch_cabinet, get_user_seller_name
 from wb_api import get_wb_feedbacks, send_answer_to_wb, check_token, get_seller_info
 from ai import generate_answer
+from db import DatabaseBot
 
 
 logging.basicConfig(
@@ -62,8 +62,8 @@ def cabinets_opt_keyboard():
 
 
 @dp.callback_query(F.data == "select_cabinet")
-async def callback_select_cabinet(callback: types.CallbackQuery):
-    list_user_cabinets = get_user_cabinets(callback.from_user.id)
+async def callback_select_cabinet(callback: types.CallbackQuery, db: DatabaseBot):
+    list_user_cabinets = await db.get_user_cabinets(callback.from_user.id)
     if not list_user_cabinets:
         await callback.message.edit_text("❌ У вас нет сохраненных кабинетов, добавьте кабинет", reply_markup=back_to_start_keyboard())
         return
@@ -93,12 +93,12 @@ async def callback_select_cabinet(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("switch_"))
-async def callback_switch_cabinet(callback: types.CallbackQuery):
+async def callback_switch_cabinet(callback: types.CallbackQuery, db: DatabaseBot):
     cabinet_id = callback.data.replace("switch_", "")
-    if not switch_cabinet(callback.from_user.id, cabinet_id):
+    if not await db.switch_cabinet(callback.from_user.id, cabinet_id):
         await callback.message.edit_text("❌ Ошибка при переключении кабинета, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
-    await callback_select_cabinet(callback)
+    await callback_select_cabinet(callback, db)
 
 
 
@@ -142,9 +142,9 @@ def default_keyboard():
     return keyboard
 
 @dp.callback_query(F.data == "cabinets_opt")
-async def callback_cabinets_opt(callback: types.CallbackQuery):
-    token = get_active_token(callback.from_user.id)
-    seller_name = get_user_seller_name(token)
+async def callback_cabinets_opt(callback: types.CallbackQuery, db: DatabaseBot):
+    token = await db.get_active_token(callback.from_user.id)
+    seller_name = await db.get_user_seller_name(token)
     await callback.message.edit_text(f"✅ Активный кабинет: {seller_name}\n\n👤 Настройки кабинета:", reply_markup=cabinets_opt_keyboard())
 
 
@@ -160,9 +160,9 @@ def connect_token_keyboard():
 
 
 @dp.message(Command("reset"))
-async def cmd_reset(message: types.Message):
-    token = get_active_token(message.from_user.id)
-    if not reset_token(message.from_user.id, token):
+async def cmd_reset(message: types.Message, db: DatabaseBot):
+    token = await db.get_active_token(message.from_user.id)
+    if not await db.reset_token(message.from_user.id, token):
         await message.answer("❌ Ошибка сброса токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     await message.answer("✅ Токен сброшен!", reply_markup=back_to_start_keyboard())
@@ -170,9 +170,9 @@ async def cmd_reset(message: types.Message):
 
 
 @dp.callback_query(F.data == "token_reset")
-async def callback_token_reset(callback: types.CallbackQuery):
-    token = get_active_token(callback.from_user.id)
-    if not reset_token(callback.from_user.id, token):
+async def callback_token_reset(callback: types.CallbackQuery, db: DatabaseBot):
+    token = await db.get_active_token(callback.from_user.id)
+    if not await db.reset_token(callback.from_user.id, token):
         await callback.message.edit_text("❌ Ошибка сброса токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     await callback.message.edit_text("✅ Токен сброшен!", reply_markup=back_to_start_keyboard())
@@ -181,10 +181,10 @@ async def callback_token_reset(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data == "callback_start")
-async def callback_start(callback: types.CallbackQuery):
-    register_user(callback.from_user.id)
-    token = get_active_token(callback.from_user.id)
-    cabinets_status = get_user_cabinets(callback.from_user.id)
+async def callback_start(callback: types.CallbackQuery, session: aiohttp.ClientSession, db: DatabaseBot):
+    await db.register_user(callback.from_user.id)
+    token = await db.get_active_token(callback.from_user.id)
+    cabinets_status = await db.get_user_cabinets(callback.from_user.id)
     if cabinets_status is None:
         await callback.message.edit_text("❌ Ошибка при загрузки кабинетов, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
@@ -202,7 +202,7 @@ async def callback_start(callback: types.CallbackQuery):
         await callback.answer()
         return
     elif token:
-        seller_info = get_seller_info(token)
+        seller_info = await get_seller_info(token, session)
         seller_name = seller_info.get("name")
         seller_id = seller_info.get("sid")
         seller_brand = seller_info.get("tradeMark")
@@ -222,18 +222,18 @@ async def callback_start(callback: types.CallbackQuery):
         await callback.answer()
         return
     else:
-        await callback_select_cabinet(callback)
+        await callback_select_cabinet(callback, db)
         await callback.answer()
         return
 
 
 
 @dp.message(Command("start"))
-async def command_start(message: types.Message):
+async def command_start(message: types.Message, session: aiohttp.ClientSession, db: DatabaseBot):
     logger.info(f"Пользователь {message.from_user.id} начал работу с ботом")
-    register_user(message.from_user.id)
-    token = get_active_token(message.from_user.id)
-    cabinets_status = get_user_cabinets(message.from_user.id)
+    await db.register_user(message.from_user.id)
+    token = await db.get_active_token(message.from_user.id)
+    cabinets_status = await db.get_user_cabinets(message.from_user.id)
     if cabinets_status is None:
         await message.answer("❌ Ошибка при загрузки кабинетов, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
@@ -250,7 +250,7 @@ async def command_start(message: types.Message):
             )
         return
     elif token:
-        seller_info = get_seller_info(token)
+        seller_info = await get_seller_info(token, session)
         seller_name = seller_info.get("name")
         seller_id = seller_info.get("sid")
         seller_brand = seller_info.get("tradeMark")
@@ -268,7 +268,7 @@ async def command_start(message: types.Message):
             )
         return
     else:
-        list_user_cabinets = get_user_cabinets(message.from_user.id)
+        list_user_cabinets = await db.get_user_cabinets(message.from_user.id)
         if not list_user_cabinets:
             await message.answer("❌ У вас нет сохраненных кабинетов, добавьте кабинет", reply_markup=back_to_start_keyboard())
             return
@@ -294,14 +294,14 @@ async def command_start(message: types.Message):
 
 
 @dp.callback_query(F.data == "check_update")
-async def callback_check_update(callback: types.CallbackQuery):
+async def callback_check_update(callback: types.CallbackQuery, session: aiohttp.ClientSession, db: DatabaseBot):
     await callback.message.edit_text("⌛ Сканирую отзывы с WB...")
-    token = get_active_token(callback.from_user.id)
-    seller_name = get_user_seller_name(token)
+    token = await db.get_active_token(callback.from_user.id)
+    seller_name = await db.get_user_seller_name(token)
     if not token:
         await callback.message.edit_text("Токен отсутствует, попробуйте сначала ввести токен", reply_markup=connect_token_keyboard())
         return
-    feedbacks = await asyncio.to_thread(get_wb_feedbacks, token)
+    feedbacks = await get_wb_feedbacks(token, session)
     if feedbacks is None:
         await callback.message.edit_text(f"❌ Ошибка загрузки ответов с WB", reply_markup=default_keyboard())
         return
@@ -324,7 +324,7 @@ async def cmd_token(message: Message, state: FSMContext):
     await state.set_state(WaitToken.wait_token)
 
 @dp.message(WaitToken.wait_token)
-async def insert_token(message: Message, state: FSMContext):
+async def insert_token(message: Message, state: FSMContext, session: aiohttp.ClientSession, db: DatabaseBot):
     data = await state.get_data()
     status_msg = await bot.edit_message_text(
         chat_id=message.chat.id,
@@ -334,19 +334,19 @@ async def insert_token(message: Message, state: FSMContext):
     token = message.text.strip()
     await message.delete()
     await state.clear()
-    token_status = check_token(token)
+    token_status = await check_token(token, session)
     if token_status is None:
         await status_msg.edit_text("❌ Непредвиденная ошибка при проверке токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
     if token_status == 200:
-        seller_info = get_seller_info(token)
+        seller_info = await get_seller_info(token, session)
         if seller_info is not None:
             seller_name = seller_info.get("name")
             brand_name = seller_info.get("tradeMark")
             if not seller_name or not brand_name:
                 await status_msg.edit_text("❌ Не удалось обработать имя продавца попробуйте снова", reply_markup=back_to_start_keyboard())
                 return
-            add_cabinet_status = add_cabinet(message.from_user.id, token, seller_name, brand_name)
+            add_cabinet_status = await db.add_cabinet(message.from_user.id, token, seller_name, brand_name)
             if add_cabinet_status == "duplicate":
                 await status_msg.edit_text("❌ Скорее всего такой токен уже существует, проверьте в списке подключенных кабинетов", reply_markup=back_to_start_keyboard())
                 return
@@ -386,13 +386,13 @@ async def start_token_replace(callback: types.CallbackQuery, state: FSMContext):
 
 
 @dp.callback_query(F.data == "reviews")
-async def callback_reviews(callback: types.CallbackQuery):
+async def callback_reviews(callback: types.CallbackQuery, session: aiohttp.ClientSession, db: DatabaseBot):
     await callback.message.edit_text("⌛ Загружаю отзывы с WB...")
-    token = get_active_token(callback.from_user.id)
+    token = await db.get_active_token(callback.from_user.id)
     if not token:
         await callback.message.edit_text("❌ Токен отсутствует!", reply_markup=connect_token_keyboard())
         return
-    feedbacks = await asyncio.to_thread(get_wb_feedbacks, token)
+    feedbacks = await get_wb_feedbacks(token, session)
     #Проверка на ошибки загрузки
     if feedbacks is None:
         await callback.message.edit_text(f"❌ Ошибка загрузки ответов с WB", reply_markup=back_to_start_keyboard())
@@ -421,7 +421,7 @@ async def reply_manual(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data == "reply_auto")
-async def reply_auto(callback: types.CallbackQuery):
+async def reply_auto(callback: types.CallbackQuery, session: aiohttp.ClientSession, db: DatabaseBot):
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
@@ -434,11 +434,11 @@ async def reply_auto(callback: types.CallbackQuery):
     if feedbacks is None:
         await callback.message.edit_text("❌ Ошибка в обработке отзывов, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
-    token = get_active_token(callback.from_user.id)
+    token = await db.get_active_token(callback.from_user.id)
     if token is None:
         await callback.message.edit_text("❌ Ошибка чтения токена", reply_markup=back_to_start_keyboard())
         return
-    token_status = check_token(token)
+    token_status = await check_token(token, session)
     if not token_status:
         await callback.message.edit_text("❌ Непредвиденная ошибка при проверке токена, попробуйте снова", reply_markup=back_to_start_keyboard())
         return
@@ -460,7 +460,7 @@ async def reply_auto(callback: types.CallbackQuery):
         counter += 1
         await asyncio.sleep(0.5)
         await callback.message.edit_text(f"⌛ Отвечаем на отзыв {counter} из {len(feedbacks)}...", reply_markup=builder.as_markup())
-        answer = await asyncio.to_thread(generate_answer, fb, counter)
+        answer = await generate_answer(fb, counter)
         if answer is None:
             error_counter += 1
             await callback.message.edit_text(f"❌ Ошибка генерации ответа на отзыв {counter} из {len(feedbacks)}")
@@ -468,7 +468,7 @@ async def reply_auto(callback: types.CallbackQuery):
                 await callback.message.edit_text(f"❌ Произошла критическа ошибка, попробуйте снова позже", reply_markup=back_to_start_keyboard())
                 return
             continue
-        succes = await asyncio.to_thread(send_answer_to_wb, fb["id"], answer, token)
+        succes = await send_answer_to_wb (fb["id"], answer, token, session)
         if succes is None:
             error_counter += 1
             await callback.message.edit_text("❌ Ошибка в отправке ответа на WB")
@@ -545,7 +545,7 @@ async def show_next_review(chat_id, user_id):
         return
     review_number = user_review_index[user_id] + 1
     fb = user_feedbacks[user_id][user_review_index[user_id]]
-    answer = await asyncio.to_thread(generate_answer, fb, review_number)
+    answer = await generate_answer(fb, review_number)
 
     if answer is None:
         user_review_index[user_id] += 1
@@ -602,7 +602,7 @@ async def show_next_review(chat_id, user_id):
 
 
 @dp.callback_query(F.data.startswith("send_"))
-async def on_send(callback: types.CallbackQuery):
+async def on_send(callback: types.CallbackQuery, session: aiohttp.ClientSession, db: DatabaseBot):
     feedback_id = callback.data.replace("send_", "")
     review = pending_reviews.get(feedback_id)
 
@@ -610,9 +610,9 @@ async def on_send(callback: types.CallbackQuery):
         await callback.answer("❌ Отзыв не найден")
         return
     try:
-        token = get_active_token(callback.from_user.id)
-        success = await asyncio.to_thread(send_answer_to_wb, feedback_id, review["answer"], token)
-    except requests.exceptions.RequestException:
+        token = await db.get_active_token(callback.from_user.id)
+        success = await send_answer_to_wb(feedback_id, review["answer"], token, session)
+    except (aiohttp.ClientError, KeyError, ValueError):
         await callback.message.edit_text(
             callback.message.text + "\n\n❌ ОШИБКА API", reply_markup=back_to_start_keyboard()
         )
@@ -749,8 +749,16 @@ async def on_cancel(callback: types.CallbackQuery):
 
 async def main():
     logger.info("Бот запущен")
-    init_db()
-    await dp.start_polling(bot)
-
+    database = DatabaseBot("bot.db")
+    await database.connect()
+    dp["db"] = database
+    session = aiohttp.ClientSession()
+    dp["session"] = session
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+        await session.close()
+        await database.close()
 if __name__ == "__main__":
     asyncio.run(main())

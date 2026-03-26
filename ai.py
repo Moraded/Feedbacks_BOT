@@ -1,5 +1,5 @@
 import openai
-from openai import OpenAI
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 import os
 import logging
@@ -10,11 +10,11 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-aitunnel = OpenAI(api_key=os.getenv("AITUNNEL_KEY"), base_url="https://api.aitunnel.ru/v1/", timeout=60.0, max_retries=2)
+aitunnel = AsyncOpenAI(api_key=os.getenv("AITUNNEL_KEY"), base_url="https://api.aitunnel.ru/v1/", timeout=60.0, max_retries=2)
 
-def generate_answer(feedback, review_number):
+async def generate_answer(feedback, review_number):
   try:
-    #Генерирует ответ через Claude
+    #Генерирует ответ через AITUNNEL на основе отзыва и системного промпта
     review_text = feedback.get("text") or ""
     pros = feedback.get("pros") or ""
     cons = feedback.get("cons") or ""
@@ -38,8 +38,8 @@ def generate_answer(feedback, review_number):
 Товар: {product}, цвет: {color}, размер: {size}.
 Текст отзыва: {full_text}, Статус заказа: {orderstatus}, номер отзыва: {review_number}"""
 
-    response = aitunnel.chat.completions.create(
-        model="deepseek-v3.2",
+    response = await aitunnel.chat.completions.create(
+        model="deepseek-v3.2-exp",
         max_tokens=768,
         messages=[{"role": "system", "content": SYSTEM_PROMPT},{"role": "user", "content": prompt}]
     )
