@@ -14,6 +14,12 @@ class DatabaseBot:
     self.db.row_factory = aiosqlite.Row
     await self._create_tables()
 
+  async def get_all_users(self) -> list[int]:
+    async with aiosqlite.connect(self.db_path) as db:
+      cursor = await db.execute("SELECT DISTINCT user_id FROM users")
+      rows = await cursor.fetchall()
+      return [row[0] for row in rows]
+
   async def _create_tables(self):
     await self.db.execute("""
 CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)""")

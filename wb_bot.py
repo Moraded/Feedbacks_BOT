@@ -44,6 +44,28 @@ active_cabinet_id = {}
 flag_stop_reply_auto = {}
 
 
+ADMIN_ID = 698459667
+
+@dp.message(Command("broadcast"))
+async def broadcast_headler(message: types.Message, db: DatabaseBot):
+    if message.from_user.id != ADMIN_ID:
+        return
+    text = message.text.replace("/broadcast ", "", 1)
+    if not text:
+        await message.answer("❌ Текст для рассылки не указан. Используйте формат: /broadcast Ваш текст")
+        return
+    users = await db.get_all_users()
+
+    success, failed = 0, 0
+    for user_id in users:
+        try:
+            await message.bot.send_message(user_id, text)
+            success += 1
+        except Exception:
+            failed += 1
+    await message.answer(f"✅ Рассылка завершена! Успешно: {success}, Не доставлено: {failed}")
+
+
 
 class WaitToken(StatesGroup):
     wait_token = State()
