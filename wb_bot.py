@@ -202,10 +202,13 @@ async def callback_start(callback: types.CallbackQuery, session: aiohttp.ClientS
         await callback.answer()
         return
     elif token:
-        seller_info = await get_seller_info(token, session)
-        seller_name = seller_info.get("name")
-        seller_id = seller_info.get("sid")
-        seller_brand = seller_info.get("tradeMark")
+        try:
+            seller_info = await get_seller_info(token, session)
+            seller_name = seller_info.get("name")
+            seller_id = seller_info.get("sid")
+            seller_brand = seller_info.get("tradeMark")
+        except:
+            await callback.answer("❌ Непредвиденная ошибка, попробуйте еще раз")
         if seller_info is None:
             await callback.message.edit_text("❌ Не удалось получить данные кабинета", reply_markup=back_to_start_keyboard())
             await callback.answer()
@@ -250,10 +253,13 @@ async def command_start(message: types.Message, session: aiohttp.ClientSession, 
             )
         return
     elif token:
-        seller_info = await get_seller_info(token, session)
-        seller_name = seller_info.get("name")
-        seller_id = seller_info.get("sid")
-        seller_brand = seller_info.get("tradeMark")
+        try:
+            seller_info = await get_seller_info(token, session)
+            seller_name = seller_info.get("name")
+            seller_id = seller_info.get("sid")
+            seller_brand = seller_info.get("tradeMark")
+        except:
+            await message.answer("❌ Непредвиденная ошибка, попробуйте еще раз")
         if seller_info is None:
             await message.answer("❌ Не удалось получить данные кабинета", reply_markup=back_to_start_keyboard())
             return
@@ -421,7 +427,8 @@ async def reply_manual(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data == "reply_auto")
-async def reply_auto(callback: types.CallbackQuery, session: aiohttp.ClientSession, db: DatabaseBot):
+async def reply_auto(callback: types.CallbackQuery, session: aiohttp.ClientSession, db: DatabaseBot, ai_semaphore: asyncio.Semaphore):
+    await callback.answer()
     builder = InlineKeyboardBuilder()
     builder.add(
         types.InlineKeyboardButton(
@@ -460,7 +467,10 @@ async def reply_auto(callback: types.CallbackQuery, session: aiohttp.ClientSessi
         counter += 1
         await asyncio.sleep(0.5)
         await callback.message.edit_text(f"⌛ Отвечаем на отзыв {counter} из {len(feedbacks)}...", reply_markup=builder.as_markup())
-        answer = await generate_answer(fb, counter)
+
+        async with ai_semaphore:
+            answer = await generate_answer(fb, counter)
+
         if answer is None:
             error_counter += 1
             await callback.message.edit_text(f"❌ Ошибка генерации ответа на отзыв {counter} из {len(feedbacks)}")
@@ -472,6 +482,9 @@ async def reply_auto(callback: types.CallbackQuery, session: aiohttp.ClientSessi
         if succes is None:
             error_counter += 1
             await callback.message.edit_text("❌ Ошибка в отправке ответа на WB")
+            if error_counter > 5:
+                await callback.message.edit_text(f"❌ Произошла критическа ошибка, попробуйте снова позже", reply_markup=back_to_start_keyboard())
+                return
             continue
         if error_counter >= 1:
             error_counter -=1
@@ -479,7 +492,7 @@ async def reply_auto(callback: types.CallbackQuery, session: aiohttp.ClientSessi
 
     user_feedbacks.pop(callback.from_user.id, None)
     user_review_index.pop(callback.from_user.id, None)
-    await callback.answer()
+
 
 @dp.callback_query(F.data == "callback_stop_reply_auto")
 async def stop_reply_auto(callback: types.CallbackQuery):
@@ -533,7 +546,6 @@ async def cancel_from_edit(callback: types.CallbackQuery):
     )
     builder.adjust(3, 1)
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
-    await callback.answer()
 
 
 
@@ -754,6 +766,8 @@ async def main():
     dp["db"] = database
     session = aiohttp.ClientSession()
     dp["session"] = session
+    ai_semaphore = asyncio.Semaphore(5)
+    dp["ai_semaphore"] = ai_semaphore
     try:
         await dp.start_polling(bot)
     finally:

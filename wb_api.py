@@ -45,7 +45,6 @@ async def check_token(WB_TOKEN, session):
         url = "https://feedbacks-api.wildberries.ru/ping"
         headers = {"Authorization": WB_TOKEN}
         async with session.get(url, headers=headers) as response:
-            print("wb status token", response.status)
             return response.status
     except (aiohttp.ClientError, KeyError, ValueError):
         logger.exception("❌ Ошибка при проверке токена")
