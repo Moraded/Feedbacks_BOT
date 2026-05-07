@@ -22,7 +22,6 @@ async def get_wb_feedbacks(WB_TOKEN, session):
         params = {"isAnswered": "false", "take": 100, "skip": 0}
         async with session.get(url, headers=headers, params=params) as response:
             r = await response.json()
-            logger.info(f"WB feedbacks ответ: {r}") #временно
             return r["data"]["feedbacks"]
     except (aiohttp.ClientError, KeyError, ValueError):
         logger.exception(f"❌ Ошибка при получении отзывов от ВБ: {r}")
