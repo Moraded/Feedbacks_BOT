@@ -23,8 +23,8 @@ Telegram-бот для автоматизации ответов на отзыв
 - **Infra**: VPS Ubuntu 22.04
  
 ## Конфигурация
-```env
 Создай в корне проекта файл `.env` (на основе `.env.example`) и заполни:
+```env
 BOT_TOKEN=ваш_токен_от_BotFather
 AITUNNEL_KEY=sk-ваш_ключ
 ADMIN_ID=123456789
@@ -48,18 +48,18 @@ python wb_bot.py
  
 ## Архитектура
 ```
-├── wb_bot.py #точка входа
-├── wb_api.py #работа с Wildberries API
-├── ai.py #подключение к AITUNNEL, генерация ответа на основе отзыва
-├── db.py #работа с SQLite через aiosqlite
-├── handlers/ #роутеры aiogram
+├── wb_bot.py # точка входа
+├── wb_api.py # работа с Wildberries API
+├── ai.py # подключение к AITUNNEL, генерация ответа на основе отзыва
+├── db.py # работа с SQLite через aiosqlite
+├── handlers/ # роутеры aiogram
 │ ├── admin.py 
 │ ├── cabinets.py
 │ ├── reviews.py
 │ └── start.py
-├── keyboards.py #клавиатуры
-├── storage.py #текущее состояние пользователей
-└── system_prompt.py #промпт для ИИ
+├── keyboards.py # клавиатуры
+├── storage.py # текущее состояние пользователей
+└── system_prompt.py # промпт для ИИ
 ```
 ## Статус
 Текущий: в разработке. Бот работает стабильно, поддерживает многопользовательность
