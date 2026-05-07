@@ -19,7 +19,7 @@ Telegram-бот для автоматизации ответов на отзыв
 ## Стек
 - **Backend**: Python 3.12.3, aiogram 3.x, aiohttp, asyncio
 - **Storage**: SQLite (aiosqlite 0.22.1)
-- **LLM**: OpenAI API, Anthropic API, AITUNNEL
+- **LLM**: AITUNNEL (прокси к OpenAI и Anthropic)
 - **Infra**: VPS Ubuntu 22.04
  
 ## Конфигурация
@@ -46,20 +46,20 @@ cp .env.example .env # заполни значения переменных в .
 python wb_bot.py
 ```
  
-## Архитектур
+## Архитектура
 ```
-├──wb_bot.py #точка входа
-├──wb_api.py #работа с Wildberries API
-├──ai.py #подключение к AITUNNEL, генерация ответа на основе отзыва
-├──db.py #работа с SQLite через aiosqlite
-├──handlers/ #роутеры aiogram
-		├──admin.py 
-		├──cabinets.py
-		├──reviews.py
-		├──start.py
-├──keyboards.py #клавиатуры
-├──storage.py текущее состояние пользователей
-├──system_prompt.py #промпт для ИИ
+├── wb_bot.py #точка входа
+├── wb_api.py #работа с Wildberries API
+├── ai.py #подключение к AITUNNEL, генерация ответа на основе отзыва
+├── db.py #работа с SQLite через aiosqlite
+├── handlers/ #роутеры aiogram
+│ ├── admin.py 
+│ ├── cabinets.py
+│ ├── reviews.py
+│ └── start.py
+├── keyboards.py #клавиатуры
+├── storage.py #текущее состояние пользователей
+└── system_prompt.py #промпт для ИИ
 ```
 ## Статус
 Текущий: в разработке. Бот работает стабильно, поддерживает многопользовательность
