@@ -1,10 +1,11 @@
 from aiogram import Router, types
 from aiogram.filters import Command
 from db import DatabaseBot
+import os
 
 router = Router()
 
-ADMIN_ID = 698459667
+ADMIN_ID = os.getenv("ADMIN_ID")
 
 @router.message(Command("broadcast"))
 async def broadcast_headler(message: types.Message, db: DatabaseBot):
