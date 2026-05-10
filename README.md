@@ -40,7 +40,7 @@ ADMIN_ID=123456789
 git clone https://github.com/Moraded/Feedbacks_BOT.git
 cd Feedbacks_BOT
 python -m venv .venv
-source .venv/bin/activate
+source .venv/scripts/activate
 pip install -r requirements.txt
 cp .env.example .env # заполни значения переменных в .env
 python wb_bot.py
