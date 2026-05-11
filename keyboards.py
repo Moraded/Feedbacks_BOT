@@ -2,12 +2,12 @@ from aiogram import types
 
 
 
-def return_keyboadr(buttons):
+def return_keyboadr(buttons: list[list[types.InlineKeyboardButton]]) -> types.InlineKeyboardMarkup:
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
-
-def cabinets_opt_keyboard():
+#кнопка "Настройки кабинета"
+def cabinets_opt_keyboard() -> types.InlineKeyboardMarkup:
     buttons = [
         [types.InlineKeyboardButton(text="▶️ Выбрать кабинет", callback_data="select_cabinet")],
         [types.InlineKeyboardButton(text="🔑 Добавить кабинет", callback_data="add_cabinet")],
@@ -16,15 +16,15 @@ def cabinets_opt_keyboard():
     ]
     return return_keyboadr(buttons)
 
-
-def back_to_start_keyboard():
+#кнопка "Назад" вызывает стартовое меню
+def back_to_start_keyboard() -> types.InlineKeyboardMarkup:
     buttons = [
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
     return return_keyboadr(buttons)
 
-
-def answermod_keyboard():
+#кнопки выбора режима ответов на отзывы, вызывают соответствующие функции
+def answermod_keyboard() -> types.InlineKeyboardMarkup:
     buttons = [
         [types.InlineKeyboardButton(text="✍️ Ручной режим", callback_data="reply_manual")],
         [types.InlineKeyboardButton(text="🤖 Ответить на все", callback_data="reply_auto")],
@@ -32,8 +32,8 @@ def answermod_keyboard():
     ]
     return return_keyboadr(buttons)
 
-
-def default_keyboard():
+#стартовое меню, после регистрации хотя бы одного кабинета ВБ
+def default_keyboard() -> types.InlineKeyboardMarkup:
     buttons = [
         [types.InlineKeyboardButton(text="📝 Ответить на отзывы", callback_data="reviews")],
         [types.InlineKeyboardButton(text="🔎 Проверить наличие отзывов", callback_data="check_update")],
@@ -42,8 +42,8 @@ def default_keyboard():
     ]
     return return_keyboadr(buttons)
 
-
-def connect_token_keyboard():
+#кнопки подключения токена
+def connect_token_keyboard() -> types.InlineKeyboardMarkup:
     buttons = [
             [types.InlineKeyboardButton(text="➡️🔑 Подключить токен", callback_data="token_connect")],
             [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
