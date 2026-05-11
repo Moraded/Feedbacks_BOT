@@ -8,7 +8,7 @@ router = Router()
 ADMIN_ID = os.getenv("ADMIN_ID")
 
 @router.message(Command("broadcast"))
-async def broadcast_headler(message: types.Message, db: DatabaseBot):
+async def broadcast_handler(message: types.Message, db: DatabaseBot):
     if message.from_user.id != ADMIN_ID:
         return
     parts = message.text.split(" ", 1)
