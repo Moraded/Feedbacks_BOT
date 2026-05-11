@@ -37,14 +37,14 @@ async def command_start(message: types.Message, session: aiohttp.ClientSession, 
     elif token:
         try:
             seller_info = await get_seller_info(token, session)
+            if seller_info is None:
+                await message.answer("❌ Не удалось получить данные кабинета", reply_markup=keyboards.back_to_start_keyboard())
+                return
             seller_name = seller_info.get("name")
             seller_id = seller_info.get("sid")
             seller_brand = seller_info.get("tradeMark")
-        except:
+        except aiohttp.ClientError as e:
             await message.answer("❌ Непредвиденная ошибка, попробуйте еще раз")
-            return
-        if seller_info is None:
-            await message.answer("❌ Не удалось получить данные кабинета", reply_markup=keyboards.back_to_start_keyboard())
             return
         await message.answer(
             "* Готовы продолжить работу?\n\n"
