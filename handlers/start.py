@@ -105,15 +105,15 @@ async def callback_start(callback: types.CallbackQuery, session: aiohttp.ClientS
     elif token:
         try:
             seller_info = await get_seller_info(token, session)
+            if seller_info is None:
+                await callback.message.edit_text("❌ Не удалось получить данные кабинета", reply_markup=keyboards.back_to_start_keyboard())
+                await callback.answer()
+                return
             seller_name = seller_info.get("name")
             seller_id = seller_info.get("sid")
             seller_brand = seller_info.get("tradeMark")
-        except:
+        except aiohttp.ClientError as e:
             await callback.answer("❌ Непредвиденная ошибка, попробуйте еще раз")
-            return
-        if seller_info is None:
-            await callback.message.edit_text("❌ Не удалось получить данные кабинета", reply_markup=keyboards.back_to_start_keyboard())
-            await callback.answer()
             return
         await callback.message.edit_text(
             "* Готовы продолжить работу?\n\n"
