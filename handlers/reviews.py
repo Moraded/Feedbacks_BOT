@@ -26,6 +26,7 @@ async def callback_reviews(callback: types.CallbackQuery, session: aiohttp.Clien
     if feedbacks is None:
         await callback.message.edit_text(f"❌ Ошибка загрузки ответов с WB", reply_markup=keyboards.back_to_start_keyboard())
         return
+    #Проверка на наличие отзывов
     if not feedbacks:
         await callback.message.edit_text("✅ Нет неотвеченных отзывов!", reply_markup=keyboards.back_to_start_keyboard())
         return
@@ -57,12 +58,15 @@ async def callback_check_update(callback: types.CallbackQuery, session: aiohttp.
 
 
 async def show_next_review(chat_id, user_id, bot):
+    #Индекс user_review_index текущего отзыва для пользователя
     if user_review_index[user_id] >= len(user_feedbacks[user_id]):
         await bot.send_message(chat_id, "✅ Обработка отзывов завершена!\n Продолжим работу? Проверьте наличие отзывов!", reply_markup=keyboards.default_keyboard())
         user_feedbacks.pop(user_id, None)
         user_review_index.pop(user_id, None)
         return
+    #review_number для отображения пользователю (начинается с 1) и для логов, чтобы не путаться в отзывах
     review_number = user_review_index[user_id] + 1
+    #fb - текущий отзыв 1, для обработки и отображения
     fb = user_feedbacks[user_id][user_review_index[user_id]]
     answer = await generate_answer(fb, review_number)
 
