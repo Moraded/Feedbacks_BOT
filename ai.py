@@ -12,7 +12,7 @@ load_dotenv()
 
 aitunnel = AsyncOpenAI(api_key=os.getenv("AITUNNEL_KEY"), base_url="https://api.aitunnel.ru/v1/", timeout=60.0, max_retries=2)
 
-async def generate_answer(feedback, review_number):
+async def generate_answer(feedback: dict, review_number: int) -> str | None:
   try:
     #Генерирует ответ через AITUNNEL на основе отзыва и системного промпта
     review_text = feedback.get("text") or ""
