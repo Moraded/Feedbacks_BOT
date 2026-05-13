@@ -63,17 +63,13 @@ async def command_start(message: types.Message, session: aiohttp.ClientSession, 
             return
         builder = InlineKeyboardBuilder()
         for cabinet in list_user_cabinets:
-            cabinet_id = cabinet[0]
-            seller_name = cabinet[1]
-            brand_name = cabinet[2]
-            is_active = cabinet[3]
-            button_text = f"{seller_name} | {brand_name}"
-            if is_active:
+            button_text = f"{cabinet["seller_name"]} | {cabinet["brand_name"]}"
+            if cabinet["is_active"]:
                 button_text += " ✅"
             builder.add(
                 types.InlineKeyboardButton(
                 text=button_text,
-                    callback_data=f"switch_{cabinet_id}"
+                    callback_data=f"switch_{cabinet['id']}"
                 )
             )
         builder.adjust(1)
@@ -105,15 +101,15 @@ async def callback_start(callback: types.CallbackQuery, session: aiohttp.ClientS
     elif token:
         try:
             seller_info = await get_seller_info(token, session)
+            if seller_info is None:
+                await callback.message.edit_text("❌ Не удалось получить данные кабинета", reply_markup=keyboards.back_to_start_keyboard())
+                await callback.answer()
+                return
             seller_name = seller_info.get("name")
             seller_id = seller_info.get("sid")
             seller_brand = seller_info.get("tradeMark")
-        except:
+        except aiohttp.ClientError as e:
             await callback.answer("❌ Непредвиденная ошибка, попробуйте еще раз")
-            return
-        if seller_info is None:
-            await callback.message.edit_text("❌ Не удалось получить данные кабинета", reply_markup=keyboards.back_to_start_keyboard())
-            await callback.answer()
             return
         await callback.message.edit_text(
             "* Готовы продолжить работу?\n\n"

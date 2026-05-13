@@ -25,17 +25,13 @@ async def callback_select_cabinet(callback: types.CallbackQuery, db: DatabaseBot
         return
     builder = InlineKeyboardBuilder()
     for cabinet in list_user_cabinets:
-        cabinet_id = cabinet[0]
-        seller_name = cabinet[1]
-        brand_name = cabinet[2]
-        is_active = cabinet[3]
-        button_text = f"{seller_name} | {brand_name}"
-        if is_active:
+        button_text = f"{cabinet['seller_name']} | {cabinet['brand_name']}"
+        if cabinet["is_active"]:
             button_text += " ✅"
         builder.add(
             types.InlineKeyboardButton(
                 text=button_text,
-                callback_data=f"switch_{cabinet_id}"
+                callback_data=f"switch_{cabinet['id']}"
             )
         )
     builder.add(

@@ -2,7 +2,7 @@ from aiogram import types
 
 
 
-def return_keyboadr(buttons: list[list[types.InlineKeyboardButton]]) -> types.InlineKeyboardMarkup:
+def return_keyboard(buttons):
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
@@ -14,14 +14,14 @@ def cabinets_opt_keyboard() -> types.InlineKeyboardMarkup:
         [types.InlineKeyboardButton(text="🔄 Сбросить токен текущего кабинета", callback_data="token_reset")],
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
-    return return_keyboadr(buttons)
+    return return_keyboard(buttons)
 
 #кнопка "Назад" вызывает стартовое меню
 def back_to_start_keyboard() -> types.InlineKeyboardMarkup:
     buttons = [
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
-    return return_keyboadr(buttons)
+    return return_keyboard(buttons)
 
 #кнопки выбора режима ответов на отзывы, вызывают соответствующие функции
 def answermod_keyboard() -> types.InlineKeyboardMarkup:
@@ -30,7 +30,7 @@ def answermod_keyboard() -> types.InlineKeyboardMarkup:
         [types.InlineKeyboardButton(text="🤖 Ответить на все", callback_data="reply_auto")],
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
-    return return_keyboadr(buttons)
+    return return_keyboard(buttons)
 
 #стартовое меню, после регистрации хотя бы одного кабинета ВБ
 def default_keyboard() -> types.InlineKeyboardMarkup:
@@ -40,7 +40,7 @@ def default_keyboard() -> types.InlineKeyboardMarkup:
         [types.InlineKeyboardButton(text="👤 Настройки кабинета",
         callback_data="cabinets_opt")]
     ]
-    return return_keyboadr(buttons)
+    return return_keyboard(buttons)
 
 #кнопки подключения токена
 def connect_token_keyboard() -> types.InlineKeyboardMarkup:
@@ -48,4 +48,4 @@ def connect_token_keyboard() -> types.InlineKeyboardMarkup:
             [types.InlineKeyboardButton(text="➡️🔑 Подключить токен", callback_data="token_connect")],
             [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
-    return return_keyboadr(buttons)
+    return return_keyboard(buttons)
