@@ -2,7 +2,7 @@ from aiogram import types
 
 
 
-def return_keyboadr(buttons):
+def return_keyboard(buttons):
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
@@ -14,14 +14,14 @@ def cabinets_opt_keyboard():
         [types.InlineKeyboardButton(text="🔄 Сбросить токен текущего кабинета", callback_data="token_reset")],
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
-    return return_keyboadr(buttons)
+    return return_keyboard(buttons)
 
 
 def back_to_start_keyboard():
     buttons = [
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
-    return return_keyboadr(buttons)
+    return return_keyboard(buttons)
 
 
 def answermod_keyboard():
@@ -30,7 +30,7 @@ def answermod_keyboard():
         [types.InlineKeyboardButton(text="🤖 Ответить на все", callback_data="reply_auto")],
         [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
-    return return_keyboadr(buttons)
+    return return_keyboard(buttons)
 
 
 def default_keyboard():
@@ -40,7 +40,7 @@ def default_keyboard():
         [types.InlineKeyboardButton(text="👤 Настройки кабинета",
         callback_data="cabinets_opt")]
     ]
-    return return_keyboadr(buttons)
+    return return_keyboard(buttons)
 
 
 def connect_token_keyboard():
@@ -48,4 +48,4 @@ def connect_token_keyboard():
             [types.InlineKeyboardButton(text="➡️🔑 Подключить токен", callback_data="token_connect")],
             [types.InlineKeyboardButton(text="◀️ Назад", callback_data="callback_start")]
     ]
-    return return_keyboadr(buttons)
+    return return_keyboard(buttons)
