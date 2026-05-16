@@ -1,5 +1,5 @@
 ![Python](https://img.shields.io/badge/python-3.12-blue)
-![Status](https://img.shields.io/badge/status-WIP-yellow)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
 # Wildberries Feedbacks Bot
  
 Telegram-бот для автоматизации ответов на отзывы Wildberries c помощью нейросетей. Для селлеров с несколькими кабинетами
