@@ -9,10 +9,20 @@ from db import DatabaseBot
 from ai import generate_answer
 import asyncio
 from wb_api import check_token, send_answer_to_wb, get_wb_feedbacks
-from storage import pending_reviews, user_feedbacks, user_review_index, flag_stop_reply_auto
+from storage import get_current_feedbacks, save_pending_review, next_review, clear_session, pending_reviews, user_feedbacks, user_review_index, flag_stop_reply_auto
 
 
 router = Router()
+
+
+def get_order_status(fb: dict) -> str:
+    statuses = {
+        "buyout": "выкуплен",
+        "rejected": "отказались",
+        "returned": "возврат",
+        "notSpecified": "статус не присвоен"
+    }
+    return statuses.get(fb.get("orderStatus"), "неопределен")
 
 @router.callback_query(F.data == "reviews")
 async def callback_reviews(callback: types.CallbackQuery, session: aiohttp.ClientSession, db: DatabaseBot):
@@ -59,31 +69,20 @@ async def callback_check_update(callback: types.CallbackQuery, session: aiohttp.
 async def show_next_review(chat_id, user_id, bot):
     if user_review_index[user_id] >= len(user_feedbacks[user_id]):
         await bot.send_message(chat_id, "✅ Обработка отзывов завершена!\n Продолжим работу? Проверьте наличие отзывов!", reply_markup=keyboards.default_keyboard())
-        user_feedbacks.pop(user_id, None)
-        user_review_index.pop(user_id, None)
+        clear_session(user_id)
         return
+    fb = get_current_feedbacks(user_id)
     review_number = user_review_index[user_id] + 1
-    fb = user_feedbacks[user_id][user_review_index[user_id]]
     answer = await generate_answer(fb, review_number)
 
     if answer is None:
-        user_review_index[user_id] += 1
+        next_review(user_id)
         await show_next_review(chat_id, user_id, bot)
         return
     
     #Сохраняем для кнопок
-    pending_reviews[fb["id"]] = {
-        "answer": answer,
-        "feedback_id": fb["id"]
-    }
-    if fb.get('orderStatus') == "buyout":
-        orderstatus = "выкуплен"
-    if fb.get('orderStatus') == "rejected":
-        orderstatus = "отказались"
-    if fb.get('orderStatus') == "returned":
-        orderstatus = "возврат"
-    if fb.get('orderStatus') == "notSpecified":
-        orderstatus = "статус не присвоен"
+    save_pending_review(fb, answer)
+    orderstatus = get_order_status(fb)
     review_text = f"Текст отзыва: {fb.get('text')}\nПлюсы: {fb.get('pros')} \nМинусы: {fb.get('cons')}\nСтатус заказа: {orderstatus}"
 
     start = "⭐" * fb["productValuation"]
@@ -96,28 +95,7 @@ async def show_next_review(chat_id, user_id, bot):
         f"✍️ Ответ: \n{answer}"
     )
 
-#Кнопки
-    builder = InlineKeyboardBuilder()
-    builder.add(
-        types.InlineKeyboardButton(
-            text="✅ Отправить",
-            callback_data=f"send_{fb['id']}"
-        ),
-        types.InlineKeyboardButton(
-            text="⏭️ Пропустить",
-            callback_data=f"skip_{fb['id']}"
-        ),
-        types.InlineKeyboardButton(
-            text="Редактировать",
-            callback_data=f"edit_{fb['id']}"
-        ),
-        types.InlineKeyboardButton(
-            text="❌ Отменить",
-            callback_data=f"cancel_review"
-        )
-    )
-    builder.adjust(3, 1)
-    await bot.send_message(chat_id, text, reply_markup=builder.as_markup())
+    await bot.send_message(chat_id, text, reply_markup=keyboards.review_action_keyboard(fb['id']))
 
 
 @router.callback_query(F.data == "reply_manual")
@@ -167,8 +145,7 @@ async def reply_auto(callback: types.CallbackQuery, session: aiohttp.ClientSessi
         if flag == True:
             await callback.message.edit_text("❌ Обработка отзывов остановлена.", reply_markup=keyboards.back_to_start_keyboard())
             flag_stop_reply_auto[callback.from_user.id] = False
-            user_feedbacks.pop(callback.from_user.id, None)
-            user_review_index.pop(callback.from_user.id, None)
+            clear_session(callback.from_user.id)
             return
         counter += 1
         await callback.message.edit_text(f"⌛ Отвечаем на отзыв {counter} из {len(feedbacks)}...", reply_markup=builder.as_markup())
@@ -195,9 +172,7 @@ async def reply_auto(callback: types.CallbackQuery, session: aiohttp.ClientSessi
             error_counter -=1
     await callback.message.edit_text(f"✅ Обработка отзывов завершена!\n\n Продолжим работу? Проверьте наличие отзывов!", reply_markup=keyboards.default_keyboard())
 
-    user_feedbacks.pop(callback.from_user.id, None)
-    user_review_index.pop(callback.from_user.id, None)
-    
+    clear_session(callback.from_user.id)
 	
 @router.callback_query(F.data == "callback_stop_reply_auto")
 async def stop_reply_auto(callback: types.CallbackQuery):
@@ -207,14 +182,7 @@ async def stop_reply_auto(callback: types.CallbackQuery):
 async def cancel_from_edit(callback: types.CallbackQuery):
     fb = user_feedbacks[callback.from_user.id][user_review_index[callback.from_user.id]]
     answer = pending_reviews[fb['id']]['answer']
-    if fb.get('orderStatus') == "buyout":
-        orderstatus = "выкуплен"
-    if fb.get('orderStatus') == "rejected":
-        orderstatus = "отказались"
-    if fb.get('orderStatus') == "returned":
-        orderstatus = "возврат"
-    if fb.get('orderStatus') == "notSpecified":
-        orderstatus = "статус не присвоен"
+    orderstatus = get_order_status(fb)
     review_text = f"Текст отзыва: {fb.get('text')}\nПлюсы: {fb.get('pros')} \nМинусы: {fb.get('cons')}\nСтатус заказа: {orderstatus}"
 
     start = "⭐" * fb["productValuation"]
@@ -227,30 +195,7 @@ async def cancel_from_edit(callback: types.CallbackQuery):
         f"✍️ Ответ: \n{answer}"
     )
 
-
-
-#Кнопки
-    builder = InlineKeyboardBuilder()
-    builder.add(
-        types.InlineKeyboardButton(
-            text="✅ Отправить",
-            callback_data=f"send_{fb['id']}"
-        ),
-        types.InlineKeyboardButton(
-            text="⏭️ Пропустить",
-            callback_data=f"skip_{fb['id']}"
-        ),
-        types.InlineKeyboardButton(
-            text="Редактировать",
-            callback_data=f"edit_{fb['id']}"
-        ),
-        types.InlineKeyboardButton(
-            text="❌ Отменить",
-            callback_data=f"cancel_review"
-        )
-    )
-    builder.adjust(3, 1)
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.message.edit_text(text, reply_markup=keyboards.review_action_keyboard(fb['id']))
     
 
 @router.callback_query(F.data.startswith("send_"))
@@ -272,7 +217,7 @@ async def on_send(callback: types.CallbackQuery, session: aiohttp.ClientSession,
         await callback.answer()
         return
     if success:
-        user_review_index[callback.from_user.id] += 1
+        next_review(callback.from_user.id)
         #await asyncio.sleep(0.5)
         await callback.message.edit_text(
             callback.message.text + "\n\n✅ ОТПРАВЛЕНО"
@@ -305,7 +250,7 @@ async def on_skip(callback: types.CallbackQuery):
     await callback.message.edit_text(
         callback.message.text + "\n\n⏭️ ПРОПУЩЕНО"
     )
-    user_review_index[callback.from_user.id] += 1
+    next_review(callback.from_user.id)
     await show_next_review(callback.message.chat.id, callback.from_user.id, callback.bot)
     await callback.answer()
 
@@ -314,24 +259,11 @@ class EditState(StatesGroup):
     
 @router.message(EditState.editing)
 async def edit_review(message: Message, state: FSMContext):
-    data = await state.get_data()
-    feedback_id = data["feedback_id"]
     await state.clear()
-    pending_reviews[feedback_id]["answer"] = message.text
-    answer = pending_reviews[feedback_id]["answer"]
-    fb = user_feedbacks[message.from_user.id][user_review_index[message.from_user.id]]
-    pending_reviews[fb["id"]] = {
-        "answer": answer,
-        "feedback_id": fb["id"]
-    }
-    if fb.get('orderStatus') == "buyout":
-        orderstatus = "выкуплен"
-    elif fb.get('orderStatus') == "rejected":
-        orderstatus = "отказались"
-    elif fb.get('orderStatus') == "returned":
-        orderstatus = "возврат"
-    elif fb.get('orderStatus') == "notSpecified":
-        orderstatus = "статус не присвоен"
+    answer = message.text
+    fb = get_current_feedbacks(message.from_user.id)
+    save_pending_review(fb, answer)
+    orderstatus = get_order_status(fb)
     review_text = f"Текст отзыва: {fb.get('text')}\nПлюсы: {fb.get('pros')} \nМинусы: {fb.get('cons')}\nСтатус заказа: {orderstatus}"
 
     start = "⭐" * fb["productValuation"]
@@ -345,28 +277,7 @@ async def edit_review(message: Message, state: FSMContext):
         f"✍️ Ответ: \n{answer}"
     )
 
-#Кнопки
-    builder = InlineKeyboardBuilder()
-    builder.add(
-        types.InlineKeyboardButton(
-            text="✅ Отправить",
-            callback_data=f"send_{fb['id']}"
-        ),
-        types.InlineKeyboardButton(
-            text="⏭️ Пропустить",
-            callback_data=f"skip_{fb['id']}"
-        ),
-        types.InlineKeyboardButton(
-            text="Редактировать",
-            callback_data=f"edit_{fb['id']}"
-        ),
-        types.InlineKeyboardButton(
-            text="❌ Отменить",
-            callback_data=f"cancel_review"
-        )
-    )
-    builder.adjust(3, 1)
-    await message.answer(text, reply_markup=builder.as_markup())
+    await message.answer(text, reply_markup=keyboards.review_action_keyboard(fb['id']))
 
 
 @router.callback_query(F.data.startswith("edit_"))
@@ -392,7 +303,6 @@ async def on_edit(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "cancel_review")
 async def on_cancel(callback: types.CallbackQuery):
-    user_feedbacks.pop(callback.from_user.id, None)
-    user_review_index.pop(callback.from_user.id, None)
+    clear_session(callback.from_user.id)
     await callback.message.edit_text(callback.message.text +"\n\n   ❌ ОТМЕНЕНО", reply_markup=keyboards.back_to_start_keyboard())
     await callback.answer()
