@@ -1,5 +1,5 @@
 ![Python](https://img.shields.io/badge/python-3.12-blue)
-![Status](https://img.shields.io/badge/status-WIP-yellow)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
 # Wildberries Feedbacks Bot
  
 Telegram-бот для автоматизации ответов на отзывы Wildberries c помощью нейросетей. Для селлеров с несколькими кабинетами
@@ -29,7 +29,7 @@ BOT_TOKEN=ваш_токен_от_BotFather
 AITUNNEL_KEY=sk-ваш_ключ
 ADMIN_ID=123456789
 ```
-### Получение WB Feedbacks API токена
+### Получение Wildberries API токена
 
 1. Зайти в личный кабинет селлера -> Профиль -> Интеграция по API -> Создать токен -> Персональный токен
 2. Создать токен с правами «Отзывы и вопросы»
