@@ -1,10 +1,21 @@
 from aiogram import types
-
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 def return_keyboard(buttons):
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
+
+def review_action_keyboard(feedback_id: str):
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        types.InlineKeyboardButton(text="✅ Отправить",   callback_data=f"send_{feedback_id}"),
+        types.InlineKeyboardButton(text="⏭️ Пропустить",  callback_data=f"skip_{feedback_id}"),
+        types.InlineKeyboardButton(text="Редактировать",  callback_data=f"edit_{feedback_id}"),
+        types.InlineKeyboardButton(text="❌ Отменить",    callback_data="cancel_review")
+    )
+    builder.adjust(3, 1)
+    return builder.as_markup()
 
 #кнопка "Настройки кабинета"
 def cabinets_opt_keyboard() -> types.InlineKeyboardMarkup:
