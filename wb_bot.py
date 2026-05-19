@@ -2,6 +2,7 @@ import asyncio
 import aiohttp
 import os
 import logging
+from logger_config import setup_logger
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from db import DatabaseBot
@@ -10,15 +11,7 @@ from handlers.cabinets import router as cabinets_router
 from handlers.reviews import router as reviews_router
 from handlers.start import router as start_router
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("bot.log"),
-        logging.StreamHandler()
-    ]
-)
-
+setup_logger()
 logger = logging.getLogger(__name__)
 
 load_dotenv()
